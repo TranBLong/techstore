@@ -157,6 +157,59 @@ router.post('/', authRequired, async (req, res) => {
   }
 });
 
+/**
+ * Khách (hoặc ADMIN) hủy đơn pending và hoàn lại tồn kho.
+ */
+router.patch('/:id/cancel', authRequired, async (req, res) => {
+  const id = String(req.params.id);
+  const order = await prisma.order.findUnique({ where: { id } });
+  if (!order) return res.status(404).json({ message: 'Không tìm thấy đơn' });
+
+  // Chỉ chủ đơn hoặc ADMIN
+  if (req.user!.role !== 'ADMIN' && order.userId !== req.user!.userId) {
+    return res.status(403).json({ message: 'Không có quyền hủy đơn này' });
+  }
+
+  // Chỉ hủy khi đang pending
+  if (order.status !== 'pending') {
+    return res.status(400).json({
+      message: 'Chỉ có thể hủy đơn đang ở trạng thái chờ xử lý (pending)',
+    });
+  }
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      // Đọc items từ JSON string
+      let items: { productId?: string; quantity?: number }[] = [];
+      try {
+        items = JSON.parse(order.items || '[]');
+      } catch {
+        items = [];
+      }
+
+      // Cộng lại stock từng sản phẩm
+      for (const item of items) {
+        const productId = String(item.productId || '').trim();
+        const qty = Number(item.quantity);
+        if (!productId || !Number.isFinite(qty) || qty <= 0) continue;
+        await tx.product.updateMany({
+          where: { id: productId },
+          data: { stock: { increment: Math.floor(qty) } },
+        });
+      }
+
+      return tx.order.update({
+        where: { id },
+        data: { status: 'cancelled' },
+      });
+    });
+
+    res.json(mapOrder(updated));
+  } catch {
+    res.status(500).json({ message: 'Hủy đơn thất bại' });
+  }
+});
+
 router.patch('/:id/status', adminRequired, async (req, res) => {
   const { status } = req.body || {};
   const allowed = ['pending', 'processing', 'shipping', 'delivered', 'cancelled'];
