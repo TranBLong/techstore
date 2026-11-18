@@ -189,6 +189,7 @@ router.post('/', authRequired, async (req, res) => {
           total,
           status: 'pending',
           paymentMethod,
+          couponCode: couponCode || null,
           shippingInfo: JSON.stringify(shippingInfo),
         },
       });
@@ -236,6 +237,13 @@ router.patch('/:id/status', adminRequired, async (req, res) => {
             where: { id: productId }, data: { stock: { increment: quantity } },
           });
         }
+        // Hoàn lượt dùng mã giảm giá (nếu có)
+        if (current.couponCode) {
+          await tx.coupon.updateMany({
+            where: { code: current.couponCode, usedCount: { gt: 0 } },
+            data: { usedCount: { decrement: 1 } },
+          });
+        }
       }
       await tx.order.update({ where: { id }, data: { status } });
       await tx.orderStatusLog.create({ data: { orderId: id, status, changedBy: req.user!.userId } });
@@ -269,6 +277,13 @@ router.post('/:id/cancel', authRequired, async (req, res) => {
         const quantity = Number(item.quantity) || 0;
         if (productId && quantity > 0) await tx.product.update({
           where: { id: productId }, data: { stock: { increment: quantity } },
+        });
+      }
+      // Hoàn lượt dùng mã giảm giá (nếu có)
+      if (current.couponCode) {
+        await tx.coupon.updateMany({
+          where: { code: current.couponCode, usedCount: { gt: 0 } },
+          data: { usedCount: { decrement: 1 } },
         });
       }
       await tx.order.update({ where: { id }, data: { status: 'cancelled' } });

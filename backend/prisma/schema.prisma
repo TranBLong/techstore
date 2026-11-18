@@ -66,6 +66,7 @@ model Order {
   total         Int
   status        String   @default("pending") // pending processing shipping delivered cancelled
   paymentMethod String   @default("cod")
+  couponCode    String?
   shippingInfo  String   // JSON
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
