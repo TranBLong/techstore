@@ -89,6 +89,39 @@ async function seedCoupons() {
   }
 }
 
+async function seedReviews() {
+  const [admin, macbook, iphone] = await Promise.all([
+    prisma.user.findUnique({ where: { email: 'admin@gmail.com' } }),
+    prisma.product.findFirst({ where: { name: 'MacBook Air M3' } }),
+    prisma.product.findFirst({ where: { name: 'iPhone 16 Pro' } }),
+  ]);
+  if (!admin || !macbook || !iphone) return;
+
+  const samples = [
+    { productId: macbook.id, userId: admin.id, rating: 5, comment: 'Máy chạy mượt, pin trâu, rất hài lòng!' },
+    { productId: iphone.id, userId: admin.id, rating: 4, comment: 'Camera đẹp, giao hàng nhanh.' },
+  ];
+  for (const sample of samples) {
+    await prisma.review.upsert({
+      where: { productId_userId: { productId: sample.productId, userId: sample.userId } },
+      update: {},
+      create: sample,
+    });
+    const aggregate = await prisma.review.aggregate({
+      where: { productId: sample.productId },
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+    await prisma.product.update({
+      where: { id: sample.productId },
+      data: {
+        rating: Number((aggregate._avg.rating ?? 0).toFixed(1)),
+        reviewCount: aggregate._count._all,
+      },
+    });
+  }
+}
+
 async function main() {
   const force = process.argv.includes('--force');
 
@@ -96,13 +129,15 @@ async function main() {
     const existingUsers = await prisma.user.count();
     if (existingUsers > 0) {
       await seedCoupons();
+      await seedReviews();
       console.log(
-        `Database đã có ${existingUsers} user — bỏ qua seed dữ liệu mẫu, chỉ bổ sung coupon còn thiếu. Dùng npm run db:seed:force nếu muốn xóa và seed lại.`
+        `Database đã có ${existingUsers} user — bỏ qua seed dữ liệu mẫu, chỉ bổ sung coupon và review mẫu còn thiếu. Dùng npm run db:seed:force nếu muốn xóa và seed lại.`
       );
       return;
     }
   }
 
+  await prisma.review.deleteMany();
   await prisma.order.deleteMany();
   await prisma.product.deleteMany();
   await prisma.category.deleteMany();
@@ -291,6 +326,7 @@ async function main() {
   }
 
   await seedCoupons();
+  await seedReviews();
 
   console.log('Seed OK:', {
     users: await prisma.user.count(),
@@ -298,6 +334,7 @@ async function main() {
     products: await prisma.product.count(),
     orders: await prisma.order.count(),
     coupons: await prisma.coupon.count(),
+    reviews: await prisma.review.count(),
     admin: admin.email,
   });
 }

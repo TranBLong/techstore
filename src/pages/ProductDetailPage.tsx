@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Star, ShoppingCart, Minus, Plus, ChevronRight } from 'lucide-react';
 import { productService } from '../services/productService';
+import { reviewService } from '../services/reviewService';
 import { useCart } from '../contexts/CartContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { formatCurrency } from '../utils/format';
 import ProductCard from '../components/product/ProductCard';
 import EmptyState from '../components/common/EmptyState';
 import Loading from '../components/common/Loading';
 import { mediaUrl } from '../services/api';
-import type { Product } from '../types';
+import type { Product, Review } from '../types';
 
 export default function ProductDetailPage() {
   const { id } = useParams();
@@ -19,17 +21,43 @@ export default function ProductDetailPage() {
   const [qty, setQty] = useState(1);
   const [activeImg, setActiveImg] = useState(0);
   const { addItem } = useCart();
+  const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewTotal, setReviewTotal] = useState(0);
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewTotalPages, setReviewTotalPages] = useState(1);
+  const [myRating, setMyRating] = useState(5);
+  const [myComment, setMyComment] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewBlockedMsg, setReviewBlockedMsg] = useState('');
+
+  const loadReviews = (productId: string, page = 1) => {
+    return reviewService
+      .list(productId, page, 5)
+      .then((response) => {
+        setReviews(response.items);
+        setReviewTotal(response.total);
+        setReviewPage(response.page);
+        setReviewTotalPages(response.totalPages);
+        setProduct((current) =>
+          current ? { ...current, rating: response.rating, reviewCount: response.reviewCount } : current
+        );
+      })
+      .catch(() => setReviews([]));
+  };
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setReviewBlockedMsg('');
     productService
       .getById(id)
       .then(async (p) => {
         setProduct(p);
         const all = await productService.getAll({ category: p.categoryId });
         setRelated(all.filter((x) => x.id !== p.id).slice(0, 4));
+        await loadReviews(p.id, 1);
       })
       .catch(() => setProduct(null))
       .finally(() => setLoading(false));
@@ -116,6 +144,92 @@ export default function ProductDetailPage() {
           )}
         </div>
       </div>
+      <section className="mb-12 border-t pt-8">
+        <h2 className="text-xl font-bold mb-4">
+          Đánh giá ({reviewTotal || product.reviewCount}) · {product.rating}/5
+        </h2>
+
+        {isAuthenticated ? (
+          <div className="bg-white border rounded-xl p-4 mb-6 space-y-3">
+            <p className="text-sm font-medium">Viết đánh giá của bạn</p>
+            <div className="flex gap-1">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button key={star} type="button" onClick={() => setMyRating(star)} className="p-0.5" aria-label={`${star} sao`}>
+                  <Star size={22} className={star <= myRating ? 'text-amber-400 fill-amber-400' : 'text-gray-300'} />
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={myComment}
+              onChange={(event) => setMyComment(event.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder="Chia sẻ trải nghiệm sản phẩm..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {reviewBlockedMsg && <p className="text-sm text-amber-600">{reviewBlockedMsg}</p>}
+            <button
+              type="button"
+              disabled={reviewSubmitting}
+              onClick={async () => {
+                if (!id) return;
+                setReviewSubmitting(true);
+                setReviewBlockedMsg('');
+                try {
+                  await reviewService.create(id, { rating: myRating, comment: myComment });
+                  showToast('Đã gửi đánh giá', 'success');
+                  setMyComment('');
+                  setMyRating(5);
+                  await loadReviews(id, 1);
+                } catch (error: unknown) {
+                  const message = error instanceof Error ? error.message : 'Không gửi được đánh giá';
+                  setReviewBlockedMsg(message);
+                  showToast(message, 'error');
+                } finally {
+                  setReviewSubmitting(false);
+                }
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60"
+            >
+              {reviewSubmitting ? 'Đang gửi...' : 'Gửi đánh giá'}
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 mb-6">
+            <Link to="/dang-nhap" className="text-blue-600 hover:underline">Đăng nhập</Link> để viết đánh giá.
+          </p>
+        )}
+
+        <div className="space-y-3">
+          {reviews.length === 0 && <p className="text-sm text-gray-400">Chưa có đánh giá nào.</p>}
+          {reviews.map((review) => (
+            <div key={review.id} className="border border-gray-100 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-medium text-sm">{review.userName}</span>
+                <span className="flex items-center gap-0.5">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <Star key={index} size={12} className={index < review.rating ? 'text-amber-400 fill-amber-400' : 'text-gray-200'} />
+                  ))}
+                </span>
+              </div>
+              {review.comment && <p className="text-sm text-gray-600">{review.comment}</p>}
+              <p className="text-xs text-gray-400 mt-1">{new Date(review.createdAt).toLocaleDateString('vi-VN')}</p>
+            </div>
+          ))}
+        </div>
+        {reviewTotalPages > 1 && (
+          <div className="flex gap-2 mt-4">
+            <button type="button" disabled={reviewPage <= 1} onClick={() => id && loadReviews(id, reviewPage - 1)} className="px-3 py-1 border rounded text-sm disabled:opacity-40">
+              Trước
+            </button>
+            <span className="text-sm text-gray-500 self-center">{reviewPage}/{reviewTotalPages}</span>
+            <button type="button" disabled={reviewPage >= reviewTotalPages} onClick={() => id && loadReviews(id, reviewPage + 1)} className="px-3 py-1 border rounded text-sm disabled:opacity-40">
+              Sau
+            </button>
+          </div>
+        )}
+      </section>
+
       {related.length > 0 && (
         <section>
           <h2 className="text-xl font-bold mb-4">Sản phẩm liên quan</h2>

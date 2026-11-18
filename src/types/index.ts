@@ -105,3 +105,23 @@ export interface Coupon {
   isActive: boolean;
   createdAt: string;
 }
+
+export interface Review {
+  id: string;
+  productId: string;
+  userId: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
+export interface ReviewListResponse {
+  items: Review[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  rating: number;
+  reviewCount: number;
+}

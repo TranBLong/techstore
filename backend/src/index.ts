@@ -9,6 +9,7 @@ import orderRoutes from './routes/orders.js';
 import userRoutes from './routes/users.js';
 import statsRoutes from './routes/stats.js';
 import couponRoutes from './routes/coupons.js';
+import reviewRoutes from './routes/reviews.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -29,6 +30,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api', reviewRoutes);
 
 app.listen(PORT, () => {
   console.log(`TechStore API running at http://localhost:${PORT}`);
