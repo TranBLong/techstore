@@ -1,10 +1,10 @@
 import { api } from './api';
-import type { Product, Category } from '../types';
+import type { Product, Category, Paginated } from '../types';
 
 export const productService = {
   getAll(params?: Record<string, string>) {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';
-    return api<Product[]>(`/products${qs}`);
+    return api<Paginated<Product>>(`/products${qs}`);
   },
 
   getById(id: string) {

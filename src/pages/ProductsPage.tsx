@@ -14,6 +14,8 @@ export default function ProductsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [mobileFilter, setMobileFilter] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -26,17 +28,21 @@ export default function ProductsPage() {
 
   useEffect(() => {
     setLoading(true);
-    const params: Record<string, string> = {};
+    const params: Record<string, string> = { page: String(page), limit: String(PER_PAGE) };
     if (q) params.q = q;
     if (category) params.category = category;
     if (brand) params.brand = brand;
-    if (sort) params.sort = sort === 'newest' ? '' : sort;
+    if (sort && sort !== 'newest') params.sort = sort;
     productService
       .getAll(params)
-      .then(setProducts)
+      .then((result) => {
+        setProducts(result.items);
+        setTotal(result.total);
+        setTotalPages(result.totalPages);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [q, category, brand, sort]);
+  }, [q, category, brand, sort, page]);
 
   useEffect(() => {
     productService.getCategories().then(setCategories).catch(console.error);
@@ -45,8 +51,6 @@ export default function ProductsPage() {
   useEffect(() => setSearchInput(q), [q]);
 
   const brands = useMemo(() => [...new Set(products.map((p) => p.brand))].sort(), [products]);
-  const totalPages = Math.ceil(products.length / PER_PAGE) || 1;
-  const paged = products.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   const updateParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -105,13 +109,13 @@ export default function ProductsPage() {
         <div className="flex-1 min-w-0">
           {loading ? <Loading /> : (
             <>
-              <p className="text-sm text-gray-500 mb-4">{products.length} sản phẩm</p>
-              {paged.length === 0 ? (
+              <p className="text-sm text-gray-500 mb-4">{total} sản phẩm</p>
+              {products.length === 0 ? (
                 <EmptyState title="Không tìm thấy sản phẩm" actionLabel="Xem tất cả" actionTo="/san-pham" />
               ) : (
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {paged.map((p) => <ProductCard key={p.id} product={p} />)}
+                    {products.map((p) => <ProductCard key={p.id} product={p} />)}
                   </div>
                   <Pagination currentPage={page} totalPages={totalPages} onPageChange={(p) => updateParam('page', String(p))} />
                 </>

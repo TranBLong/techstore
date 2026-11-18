@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { orderService } from '../services/orderService';
+import { useToast } from '../contexts/ToastContext';
 import { formatCurrency, formatDate, getOrderStatusLabel, getOrderStatusColor } from '../utils/format';
 import EmptyState from '../components/common/EmptyState';
 import Loading from '../components/common/Loading';
@@ -10,6 +11,7 @@ import type { Order } from '../types';
 
 export default function OrdersPage() {
   const { isAuthenticated } = useAuth();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +77,36 @@ export default function OrdersPage() {
                   <p><span className="text-gray-500">Người nhận:</span> {order.shippingInfo?.fullName} · {order.shippingInfo?.phone}</p>
                   <p><span className="text-gray-500">Địa chỉ:</span> {order.shippingInfo?.address}, {order.shippingInfo?.district}, {order.shippingInfo?.city}</p>
                   <p><span className="text-gray-500">Thanh toán:</span> {order.paymentMethod === 'cod' ? 'COD' : 'Chuyển khoản'}</p>
+                  {(order.statusLogs?.length ?? 0) > 0 && (
+                    <div className="mt-3 pt-2 border-t border-gray-200">
+                      <p className="text-gray-500 mb-1">Lịch sử trạng thái</p>
+                      <ol className="space-y-1">
+                        {order.statusLogs!.map((log) => (
+                          <li key={log.id} className="flex gap-2 text-xs">
+                            <span className={`px-2 py-0.5 rounded-full ${getOrderStatusColor(log.status)}`}>{getOrderStatusLabel(log.status)}</span>
+                            <span className="text-gray-400">{formatDate(log.createdAt)}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  {['pending', 'processing'].includes(order.status) && (
+                    <button
+                      type="button"
+                      className="mt-3 text-sm text-red-600 hover:underline"
+                      onClick={async () => {
+                        if (!confirm('Hủy đơn hàng này?')) return;
+                        try {
+                          const updated = await orderService.cancelOrder(order.id);
+                          setOrders((previous) => previous.map((item) => item.id === order.id ? updated : item));
+                          setSelected(updated);
+                          showToast('Đã hủy đơn hàng', 'success');
+                        } catch (error: unknown) {
+                          showToast(error instanceof Error ? error.message : 'Hủy đơn thất bại', 'error');
+                        }
+                      }}
+                    >Hủy đơn hàng</button>
+                  )}
                 </div>
               )}
             </div>

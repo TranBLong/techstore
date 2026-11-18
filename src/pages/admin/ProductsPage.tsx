@@ -18,8 +18,8 @@ export default function AdminProductsPage() {
 
   useEffect(() => {
     productService
-      .getAll({ status: 'all' })
-      .then(setProducts)
+      .getAll({ status: 'all', page: '1', limit: '50' })
+      .then((result) => setProducts(result.items))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);

@@ -4,6 +4,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { formatCurrency, formatDate, getOrderStatusLabel, getOrderStatusColor } from '../../utils/format';
 import type { Order, OrderStatus } from '../../types';
 import Loading from '../../components/common/Loading';
+import Pagination from '../../components/common/Pagination';
 
 const statuses: OrderStatus[] = ['pending', 'processing', 'shipping', 'delivered', 'cancelled'];
 
@@ -12,10 +13,22 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Order | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
-  useEffect(() => {
-    orderService.getAllOrders().then(setOrders).catch(console.error).finally(() => setLoading(false));
-  }, []);
+  const load = (nextPage = page) => {
+    setLoading(true);
+    orderService.getAllOrders({ page: String(nextPage), limit: '12' })
+      .then((result) => {
+        setOrders(result.items);
+        setPage(result.page);
+        setTotalPages(result.totalPages);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(1); }, []);
 
   const handleStatus = async (id: string, status: OrderStatus) => {
     try {
@@ -68,6 +81,7 @@ export default function AdminOrdersPage() {
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={page} totalPages={totalPages} onPageChange={(nextPage) => load(nextPage)} />
       {selected && (
         <div className="bg-white rounded-xl border p-5 text-sm">
           <h3 className="font-semibold mb-2">Chi tiết đơn</h3>
@@ -80,6 +94,19 @@ export default function AdminOrdersPage() {
             </div>
           ))}
           <p className="text-right font-bold text-blue-600 mt-2">{formatCurrency(selected.total)}</p>
+          {(selected.statusLogs?.length ?? 0) > 0 && (
+            <div className="mt-4 border-t pt-3">
+              <h4 className="font-medium mb-2">Lịch sử trạng thái</h4>
+              <ol className="space-y-2">
+                {selected.statusLogs!.map((log) => (
+                  <li key={log.id} className="flex gap-2 text-xs text-gray-600">
+                    <span className={`px-2 py-0.5 rounded-full ${getOrderStatusColor(log.status)}`}>{getOrderStatusLabel(log.status)}</span>
+                    <span>{formatDate(log.createdAt)}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { Order, CartItem, OrderItem } from '../types';
+import type { Order, CartItem, OrderItem, Paginated } from '../types';
 
 const CART_KEY = 'techstore_cart';
 
@@ -50,8 +50,13 @@ export const orderService = {
     return api<Order[]>('/orders/my');
   },
 
-  getAllOrders() {
-    return api<Order[]>('/orders');
+  getAllOrders(params?: Record<string, string>) {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return api<Paginated<Order>>(`/orders${qs}`);
+  },
+
+  cancelOrder(id: string) {
+    return api<Order>(`/orders/${id}/cancel`, { method: 'POST' });
   },
 
   createOrder(data: {

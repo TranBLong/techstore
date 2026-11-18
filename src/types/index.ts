@@ -84,6 +84,22 @@ export interface Order {
   };
   createdAt: string;
   updatedAt: string;
+  statusLogs?: OrderStatusLog[];
+}
+
+export interface OrderStatusLog {
+  id: string;
+  status: string;
+  changedBy: string;
+  createdAt: string;
+}
+
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 export interface AuthState {

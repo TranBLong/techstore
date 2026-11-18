@@ -14,17 +14,30 @@ router.get('/my', authRequired, async (req, res) => {
   const list = await prisma.order.findMany({
     where: { userId: req.user!.userId },
     orderBy: { createdAt: 'desc' },
+    include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
   });
   res.json(list.map(mapOrder));
 });
 
-router.get('/', adminRequired, async (_req, res) => {
-  const list = await prisma.order.findMany({ orderBy: { createdAt: 'desc' } });
-  res.json(list.map(mapOrder));
+router.get('/', adminRequired, async (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
+  const skip = (page - 1) * limit;
+  const [total, list] = await Promise.all([
+    prisma.order.count(),
+    prisma.order.findMany({
+      orderBy: { createdAt: 'desc' }, skip, take: limit,
+      include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
+    }),
+  ]);
+  res.json({ items: list.map(mapOrder), total, page, limit, totalPages: Math.ceil(total / limit) || 1 });
 });
 
 router.get('/:id', authRequired, async (req, res) => {
-  const order = await prisma.order.findUnique({ where: { id: String(req.params.id) } });
+  const order = await prisma.order.findUnique({
+    where: { id: String(req.params.id) },
+    include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
+  });
   if (!order) return res.status(404).json({ message: 'Không tìm thấy đơn' });
   if (req.user!.role !== 'ADMIN' && order.userId !== req.user!.userId) {
     return res.status(403).json({ message: 'Không có quyền' });
@@ -164,7 +177,7 @@ router.post('/', authRequired, async (req, res) => {
         }
       }
 
-      return tx.order.create({
+      const created = await tx.order.create({
         data: {
           userId: user.id,
           userName: shippingInfo.fullName || user.fullName,
@@ -179,6 +192,10 @@ router.post('/', authRequired, async (req, res) => {
           shippingInfo: JSON.stringify(shippingInfo),
         },
       });
+      await tx.orderStatusLog.create({ data: { orderId: created.id, status: 'pending', changedBy: user.id } });
+      return tx.order.findUniqueOrThrow({
+        where: { id: created.id }, include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
+      });
     });
 
     res.status(201).json(mapOrder(order));
@@ -192,17 +209,80 @@ router.post('/', authRequired, async (req, res) => {
 });
 
 router.patch('/:id/status', adminRequired, async (req, res) => {
-  const { status } = req.body || {};
+  const status = String(req.body?.status || '');
   const allowed = ['pending', 'processing', 'shipping', 'delivered', 'cancelled'];
   if (!allowed.includes(status)) return res.status(400).json({ message: 'Trạng thái không hợp lệ' });
   try {
-    const order = await prisma.order.update({
-      where: { id: String(req.params.id) },
-      data: { status },
+    const id = String(req.params.id);
+    const order = await prisma.$transaction(async (tx) => {
+      const current = await tx.order.findUnique({ where: { id } });
+      if (!current) throw new Error('NOT_FOUND');
+      if (current.status === 'cancelled' || current.status === 'delivered') {
+        throw new Error('Không thể đổi trạng thái đơn đã giao hoặc đã hủy');
+      }
+      if (status === current.status) return tx.order.findUniqueOrThrow({
+        where: { id }, include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
+      });
+      if (status === 'cancelled') {
+        if (!['pending', 'processing'].includes(current.status)) {
+          throw new Error('Chỉ hủy được đơn đang chờ xác nhận hoặc đang xử lý');
+        }
+        let items: { productId: string; quantity: number }[] = [];
+        try { items = JSON.parse(current.items || '[]'); } catch { items = []; }
+        for (const item of items) {
+          const productId = String(item.productId || '');
+          const quantity = Number(item.quantity) || 0;
+          if (productId && quantity > 0) await tx.product.update({
+            where: { id: productId }, data: { stock: { increment: quantity } },
+          });
+        }
+      }
+      await tx.order.update({ where: { id }, data: { status } });
+      await tx.orderStatusLog.create({ data: { orderId: id, status, changedBy: req.user!.userId } });
+      return tx.order.findUniqueOrThrow({
+        where: { id }, include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
+      });
     });
     res.json(mapOrder(order));
-  } catch {
-    res.status(404).json({ message: 'Không tìm thấy đơn' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Cập nhật thất bại';
+    if (message === 'NOT_FOUND') return res.status(404).json({ message: 'Không tìm thấy đơn' });
+    res.status(400).json({ message });
+  }
+});
+
+/** User hủy đơn của mình */
+router.post('/:id/cancel', authRequired, async (req, res) => {
+  const id = String(req.params.id);
+  try {
+    const order = await prisma.$transaction(async (tx) => {
+      const current = await tx.order.findUnique({ where: { id } });
+      if (!current) throw new Error('NOT_FOUND');
+      if (current.userId !== req.user!.userId && req.user!.role !== 'ADMIN') throw new Error('FORBIDDEN');
+      if (!['pending', 'processing'].includes(current.status)) {
+        throw new Error(current.status === 'cancelled' ? 'Đơn đã được hủy trước đó' : 'Chỉ hủy được đơn đang chờ xác nhận hoặc đang xử lý');
+      }
+      let items: { productId: string; quantity: number }[] = [];
+      try { items = JSON.parse(current.items || '[]'); } catch { items = []; }
+      for (const item of items) {
+        const productId = String(item.productId || '');
+        const quantity = Number(item.quantity) || 0;
+        if (productId && quantity > 0) await tx.product.update({
+          where: { id: productId }, data: { stock: { increment: quantity } },
+        });
+      }
+      await tx.order.update({ where: { id }, data: { status: 'cancelled' } });
+      await tx.orderStatusLog.create({ data: { orderId: id, status: 'cancelled', changedBy: req.user!.userId } });
+      return tx.order.findUniqueOrThrow({
+        where: { id }, include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
+      });
+    });
+    res.json(mapOrder(order));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Hủy đơn thất bại';
+    if (message === 'NOT_FOUND') return res.status(404).json({ message: 'Không tìm thấy đơn' });
+    if (message === 'FORBIDDEN') return res.status(403).json({ message: 'Không có quyền' });
+    res.status(400).json({ message });
   }
 });
 

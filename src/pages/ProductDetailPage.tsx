@@ -55,8 +55,8 @@ export default function ProductDetailPage() {
       .getById(id)
       .then(async (p) => {
         setProduct(p);
-        const all = await productService.getAll({ category: p.categoryId });
-        setRelated(all.filter((x) => x.id !== p.id).slice(0, 4));
+        const all = await productService.getAll({ category: p.categoryId, limit: '8' });
+        setRelated(all.items.filter((x) => x.id !== p.id).slice(0, 4));
         await loadReviews(p.id, 1);
       })
       .catch(() => setProduct(null))

@@ -25,7 +25,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       setItems([]);
       return;
     }
-    const products = await productService.getAll({ status: 'active' }).catch(() => [] as Product[]);
+    const response = await productService.getAll({ status: 'active', limit: '50' }).catch(() => null);
+    const products = response?.items ?? [];
     const map = new Map(products.map((p) => [p.id, p]));
     // fetch missing individually
     const enriched: (CartItem & { product: Product })[] = [];

@@ -69,6 +69,16 @@ model Order {
   shippingInfo  String   // JSON
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  statusLogs    OrderStatusLog[]
+}
+
+model OrderStatusLog {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    String
+  changedBy String
+  createdAt DateTime @default(now())
 }
 
 model Coupon {

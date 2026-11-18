@@ -7,6 +7,9 @@ const router = Router();
 
 router.get('/', async (req, res) => {
   const { q, category, brand, minPrice, maxPrice, sort, status } = req.query;
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
+  const skip = (page - 1) * limit;
   const where: any = {};
   if (status && status !== 'all') where.status = String(status);
   else if (!status) where.status = 'active';
@@ -30,23 +33,17 @@ router.get('/', async (req, res) => {
   if (sort === 'price-asc') orderBy = { price: 'asc' };
   if (sort === 'price-desc') orderBy = { price: 'desc' };
   if (sort === 'rating') orderBy = { rating: 'desc' };
+  if (sort === 'bestseller') orderBy = [{ isBestSeller: 'desc' }, { createdAt: 'desc' }];
 
-  const list = await prisma.product.findMany({
-    where,
-    orderBy,
-    include: { category: true },
-  });
-
-  let result = list.map((p) => ({
+  const [total, list] = await Promise.all([
+    prisma.product.count({ where }),
+    prisma.product.findMany({ where, orderBy, skip, take: limit, include: { category: true } }),
+  ]);
+  const items = list.map((p) => ({
     ...mapProduct(p),
     categoryName: p.category.name,
   }));
-
-  if (sort === 'bestseller') {
-    result = result.sort((a, b) => Number(b.isBestSeller) - Number(a.isBestSeller));
-  }
-
-  res.json(result);
+  res.json({ items, total, page, limit, totalPages: Math.ceil(total / limit) || 1 });
 });
 
 router.get('/featured', async (_req, res) => {
