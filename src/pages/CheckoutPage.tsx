@@ -4,6 +4,7 @@ import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { orderService } from '../services/orderService';
+import { couponService } from '../services/couponService';
 import { formatCurrency } from '../utils/format';
 import EmptyState from '../components/common/EmptyState';
 import { mediaUrl } from '../services/api';
@@ -13,8 +14,14 @@ export default function CheckoutPage() {
   const { user, isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCode, setAppliedCode] = useState('');
+  const [discount, setDiscount] = useState(0);
+  const [couponLoading, setCouponLoading] = useState(false);
+
   const shipping = subtotal > 5000000 || subtotal === 0 ? 0 : 30000;
-  const total = subtotal + shipping;
+  const total = Math.max(0, subtotal - discount + shipping);
 
   const [form, setForm] = useState({
     fullName: user?.fullName || '',
@@ -49,6 +56,38 @@ export default function CheckoutPage() {
     return Object.keys(e).length === 0;
   };
 
+  const handleApplyCoupon = async () => {
+    const code = couponInput.trim();
+    if (!code) {
+      showToast('Vui lòng nhập mã giảm giá', 'error');
+      return;
+    }
+    if (!isAuthenticated) {
+      showToast('Vui lòng đăng nhập để dùng mã giảm giá', 'error');
+      navigate('/dang-nhap');
+      return;
+    }
+    setCouponLoading(true);
+    try {
+      const result = await couponService.validate(code, subtotal);
+      setAppliedCode(result.code);
+      setDiscount(result.discount);
+      showToast(`Áp dụng mã ${result.code}: -${formatCurrency(result.discount)}`, 'success');
+    } catch (err: any) {
+      setAppliedCode('');
+      setDiscount(0);
+      showToast(err.message || 'Mã không hợp lệ', 'error');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleClearCoupon = () => {
+    setCouponInput('');
+    setAppliedCode('');
+    setDiscount(0);
+  };
+
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!validate()) return;
@@ -68,7 +107,7 @@ export default function CheckoutPage() {
           quantity: i.quantity,
         })),
         subtotal,
-        discount: 0,
+        discount,
         shippingFee: shipping,
         total,
         paymentMethod: form.paymentMethod,
@@ -81,6 +120,7 @@ export default function CheckoutPage() {
           district: form.district,
           note: form.note,
         },
+        couponCode: appliedCode || undefined,
       });
       clearCart();
       showToast('Đặt hàng thành công!', 'success');
@@ -152,8 +192,45 @@ export default function CheckoutPage() {
                 </div>
               ))}
             </div>
+
+            <div className="mb-4 space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Mã giảm giá</label>
+              <div className="flex gap-2">
+                <input
+                  value={couponInput}
+                  onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                  placeholder="VD: GIAM10"
+                  disabled={!!appliedCode}
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                {appliedCode ? (
+                  <button type="button" onClick={handleClearCoupon} className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-red-600 hover:bg-red-50">
+                    Xóa
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    disabled={couponLoading}
+                    className="px-3 py-2 bg-gray-800 text-white rounded-lg text-sm hover:bg-gray-900 disabled:opacity-60"
+                  >
+                    {couponLoading ? '...' : 'Áp dụng'}
+                  </button>
+                )}
+              </div>
+              {appliedCode && (
+                <p className="text-xs text-green-600">Đã áp dụng: {appliedCode}</p>
+              )}
+            </div>
+
             <div className="space-y-2 text-sm border-t pt-3">
               <div className="flex justify-between"><span className="text-gray-500">Tạm tính</span><span>{formatCurrency(subtotal)}</span></div>
+              {discount > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>Giảm giá ({appliedCode})</span>
+                  <span>-{formatCurrency(discount)}</span>
+                </div>
+              )}
               <div className="flex justify-between"><span className="text-gray-500">Phí vận chuyển</span><span>{shipping === 0 ? 'Miễn phí' : formatCurrency(shipping)}</span></div>
               <div className="flex justify-between text-base font-bold pt-1"><span>Tổng cộng</span><span className="text-blue-600">{formatCurrency(total)}</span></div>
             </div>

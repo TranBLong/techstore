@@ -71,14 +71,33 @@ const categories = [
   { name: 'Phụ kiện', slug: 'phu-kien', description: 'Sạc, ốp lưng, cáp, hub' },
 ];
 
+async function seedCoupons() {
+  const expiresAt = new Date();
+  expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+  const coupons = [
+    { code: 'GIAM10', type: 'percent', value: 10, minOrder: 500000, maxDiscount: 500000, usageLimit: 100 },
+    { code: 'FREESHIP', type: 'fixed', value: 30000, minOrder: 0, maxDiscount: null, usageLimit: 200 },
+    { code: 'SALE50K', type: 'fixed', value: 50000, minOrder: 1000000, maxDiscount: null, usageLimit: 50 },
+  ];
+
+  for (const coupon of coupons) {
+    await prisma.coupon.upsert({
+      where: { code: coupon.code },
+      update: {},
+      create: { ...coupon, usedCount: 0, expiresAt, isActive: true },
+    });
+  }
+}
+
 async function main() {
   const force = process.argv.includes('--force');
 
   if (!force) {
     const existingUsers = await prisma.user.count();
     if (existingUsers > 0) {
+      await seedCoupons();
       console.log(
-        `Database đã có ${existingUsers} user — bỏ qua seed. Dùng npm run db:seed:force nếu muốn xóa và seed lại.`
+        `Database đã có ${existingUsers} user — bỏ qua seed dữ liệu mẫu, chỉ bổ sung coupon còn thiếu. Dùng npm run db:seed:force nếu muốn xóa và seed lại.`
       );
       return;
     }
@@ -88,6 +107,7 @@ async function main() {
   await prisma.product.deleteMany();
   await prisma.category.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.coupon.deleteMany();
 
   const passwordAdmin = await bcrypt.hash('admin123', 10);
   const passwordUser = await bcrypt.hash('123456', 10);
@@ -270,11 +290,14 @@ async function main() {
     });
   }
 
+  await seedCoupons();
+
   console.log('Seed OK:', {
     users: await prisma.user.count(),
     categories: await prisma.category.count(),
     products: await prisma.product.count(),
     orders: await prisma.order.count(),
+    coupons: await prisma.coupon.count(),
     admin: admin.email,
   });
 }

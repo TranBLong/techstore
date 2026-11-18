@@ -23,6 +23,7 @@ import ProductFormPage from './pages/admin/ProductFormPage';
 import AdminOrdersPage from './pages/admin/OrdersPage';
 import AdminUsersPage from './pages/admin/UsersPage';
 import AdminCategoriesPage from './pages/admin/CategoriesPage';
+import AdminCouponsPage from './pages/admin/CouponsPage';
 
 export default function App() {
   return (
@@ -53,6 +54,7 @@ export default function App() {
                 <Route path="don-hang" element={<AdminOrdersPage />} />
                 <Route path="nguoi-dung" element={<AdminUsersPage />} />
                 <Route path="danh-muc" element={<AdminCategoriesPage />} />
+                <Route path="ma-giam-gia" element={<AdminCouponsPage />} />
               </Route>
             </Routes>
           </ToastProvider>

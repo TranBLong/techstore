@@ -91,3 +91,17 @@ export interface AuthState {
   isAuthenticated: boolean;
   isAdmin: boolean;
 }
+
+export interface Coupon {
+  id: string;
+  code: string;
+  type: 'percent' | 'fixed';
+  value: number;
+  minOrder: number;
+  maxDiscount: number | null;
+  usageLimit: number | null;
+  usedCount: number;
+  expiresAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+}

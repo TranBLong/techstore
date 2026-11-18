@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authRequired, adminRequired } from '../middleware/auth.js';
 import { mapOrder } from '../utils/map.js';
+import { assertCouponUsable } from './coupons.js';
 
 const router = Router();
 
@@ -50,7 +51,7 @@ router.post('/', authRequired, async (req, res) => {
   for (const it of rawItems) {
     const id = String(it.productId || '').trim();
     const qty = Number(it.quantity);
-    if (!id || !Number.isFinite(qty) || qty <= 0) {
+    if (!id || !Number.isSafeInteger(qty) || qty <= 0) {
       return res.status(400).json({ message: 'Mỗi sản phẩm cần productId và quantity > 0' });
     }
     qtyMap.set(id, (qtyMap.get(id) || 0) + Math.floor(qty));
@@ -105,9 +106,18 @@ router.post('/', authRequired, async (req, res) => {
 
   // Server tự tính tiền
   const subtotal = orderItems.reduce((s, i) => s + i.price * i.quantity, 0);
-  const discount = 0;
   const shippingFee = subtotal > FREE_SHIP_THRESHOLD || subtotal === 0 ? 0 : SHIPPING_FEE;
-  const total = subtotal - discount + shippingFee;
+  const couponCode = String(body.couponCode || '').trim().toUpperCase();
+  let discount = 0;
+  let couponId: string | null = null;
+  if (couponCode) {
+    const coupon = await prisma.coupon.findUnique({ where: { code: couponCode } });
+    const result = assertCouponUsable(coupon, subtotal);
+    if (!result.ok) return res.status(400).json({ message: result.message });
+    discount = result.discount;
+    couponId = coupon!.id;
+  }
+  const total = Math.max(0, subtotal - discount + shippingFee);
 
   const shippingInfo = body.shippingInfo || {};
   const paymentMethod = body.paymentMethod === 'transfer' ? 'transfer' : 'cod';
@@ -128,6 +138,29 @@ router.post('/', authRequired, async (req, res) => {
           throw new Error(
             `Không đủ tồn kho cho sản phẩm "${item.productName}" (có thể vừa bị đặt hết)`
           );
+        }
+      }
+
+      if (couponId) {
+        const coupon = await tx.coupon.findUnique({ where: { id: couponId } });
+        const result = assertCouponUsable(coupon, subtotal);
+        if (!result.ok || result.discount !== discount) {
+          throw new Error(result.ok ? 'Mã giảm giá đã thay đổi, vui lòng áp dụng lại' : result.message);
+        }
+
+        const updated = await tx.coupon.updateMany({
+          where: {
+            id: couponId,
+            isActive: true,
+            AND: [
+              { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+              ...(coupon!.usageLimit == null ? [] : [{ usedCount: { lt: coupon!.usageLimit! } }]),
+            ],
+          },
+          data: { usedCount: { increment: 1 } },
+        });
+        if (updated.count !== 1) {
+          throw new Error('Mã giảm giá đã hết lượt sử dụng hoặc hết hạn');
         }
       }
 
@@ -152,8 +185,9 @@ router.post('/', authRequired, async (req, res) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Đặt hàng thất bại';
     // Lỗi tồn kho / nghiệp vụ → 400; lỗi khác → 500
-    const isStock = message.includes('tồn kho') || message.includes('Không đủ');
-    res.status(isStock ? 400 : 500).json({ message });
+    const isBusinessError =
+      message.includes('tồn kho') || message.includes('Không đủ') || message.includes('Mã giảm giá');
+    res.status(isBusinessError ? 400 : 500).json({ message });
   }
 });
 

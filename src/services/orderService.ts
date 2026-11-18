@@ -62,8 +62,17 @@ export const orderService = {
     total: number;
     paymentMethod: 'cod' | 'transfer';
     shippingInfo: Order['shippingInfo'];
+    couponCode?: string;
   }) {
-    return api<Order>('/orders', { method: 'POST', body: JSON.stringify(data) });
+    return api<Order>('/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        items: data.items.map(({ productId, quantity }) => ({ productId, quantity })),
+        paymentMethod: data.paymentMethod,
+        shippingInfo: data.shippingInfo,
+        couponCode: data.couponCode || undefined,
+      }),
+    });
   },
 
   updateStatus(id: string, status: string) {

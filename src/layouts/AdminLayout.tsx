@@ -11,6 +11,7 @@ import {
   Menu,
   X,
   ChevronLeft,
+  TicketPercent,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ToastContainer from '../components/common/Toast';
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/admin/don-hang', icon: ShoppingBag, label: 'Đơn hàng' },
   { to: '/admin/nguoi-dung', icon: Users, label: 'Người dùng' },
   { to: '/admin/danh-muc', icon: FolderTree, label: 'Danh mục' },
+  { to: '/admin/ma-giam-gia', icon: TicketPercent, label: 'Mã giảm giá' },
 ];
 
 export default function AdminLayout() {
