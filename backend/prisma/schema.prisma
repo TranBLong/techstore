@@ -21,6 +21,7 @@ model User {
   createdAt DateTime @default(now())
   orders    Order[]
   reviews   Review[]
+  wishlists Wishlist[]
 }
 
 model Category {
@@ -51,6 +52,7 @@ model Product {
   status       String   @default("active") // active | inactive
   createdAt    DateTime @default(now())
   reviews      Review[]
+  wishlists    Wishlist[]
 }
 
 model Order {
@@ -107,4 +109,15 @@ model Review {
   createdAt DateTime @default(now())
 
   @@unique([productId, userId])
+}
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
 }

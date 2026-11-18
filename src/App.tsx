@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { WishlistProvider } from './contexts/WishlistContext';
 import MainLayout from './layouts/MainLayout';
 import AdminLayout from './layouts/AdminLayout';
 import { ProtectedRoute, AdminRoute } from './routes/ProtectedRoute';
@@ -15,6 +16,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AccountPage from './pages/AccountPage';
 import OrdersPage from './pages/OrdersPage';
+import WishlistPage from './pages/WishlistPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import DashboardPage from './pages/admin/DashboardPage';
@@ -31,6 +33,7 @@ export default function App() {
       <AuthProvider>
         <CartProvider>
           <ToastProvider>
+            <WishlistProvider>
             <Routes>
               <Route element={<MainLayout />}>
                 <Route index element={<HomePage />} />
@@ -42,6 +45,7 @@ export default function App() {
                 <Route path="dang-ky" element={<RegisterPage />} />
                 <Route path="tai-khoan" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
                 <Route path="don-hang" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
+                <Route path="yeu-thich" element={<ProtectedRoute><WishlistPage /></ProtectedRoute>} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
 
@@ -57,6 +61,7 @@ export default function App() {
                 <Route path="ma-giam-gia" element={<AdminCouponsPage />} />
               </Route>
             </Routes>
+            </WishlistProvider>
           </ToastProvider>
         </CartProvider>
       </AuthProvider>

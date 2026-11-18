@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, ShoppingCart, User, Menu, X, LogOut, Package, LayoutDashboard } from 'lucide-react';
+import { Search, ShoppingCart, User, Menu, X, LogOut, Package, LayoutDashboard, Heart } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCart } from '../../contexts/CartContext';
 import { productService } from '../../services/productService';
@@ -53,6 +53,11 @@ export default function Header() {
           </form>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {isAuthenticated && (
+              <Link to="/yeu-thich" className="p-2 text-gray-600 hover:text-red-500 transition" title="Yêu thích">
+                <Heart size={22} />
+              </Link>
+            )}
             <Link to="/gio-hang" className="relative p-2 text-gray-600 hover:text-blue-600 transition">
               <ShoppingCart size={22} />
               {itemCount > 0 && (
@@ -84,6 +89,9 @@ export default function Header() {
                       </Link>
                       <Link to="/don-hang" onClick={() => setUserMenu(false)} className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
                         <Package size={16} /> Đơn hàng
+                      </Link>
+                      <Link to="/yeu-thich" onClick={() => setUserMenu(false)} className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                        <Heart size={16} /> Yêu thích
                       </Link>
                       {isAdmin && (
                         <Link to="/admin/dashboard" onClick={() => setUserMenu(false)} className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">

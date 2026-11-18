@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom';
-import { Star, ShoppingCart } from 'lucide-react';
+import { Star, ShoppingCart, Heart } from 'lucide-react';
 import type { Product } from '../../types';
 import { formatCurrency } from '../../utils/format';
 import { useCart } from '../../contexts/CartContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useWishlist } from '../../contexts/WishlistContext';
 import { mediaUrl } from '../../services/api';
 
 interface Props {
@@ -13,6 +15,9 @@ interface Props {
 export default function ProductCard({ product }: Props) {
   const { addItem } = useCart();
   const { showToast } = useToast();
+  const { isAuthenticated } = useAuth();
+  const { isWishlisted, toggle } = useWishlist();
+  const liked = isWishlisted(product.id);
   const price = product.salePrice ?? product.price;
   const discount = product.salePrice
     ? Math.round(((product.price - product.salePrice) / product.price) * 100)
@@ -24,6 +29,21 @@ export default function ProductCard({ product }: Props) {
     e.stopPropagation();
     await addItem(product.id, 1);
     showToast('Đã thêm vào giỏ hàng', 'success');
+  };
+
+  const handleWishlist = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isAuthenticated) {
+      showToast('Vui lòng đăng nhập để thêm yêu thích', 'info');
+      return;
+    }
+    try {
+      await toggle(product.id);
+      showToast(liked ? 'Đã bỏ yêu thích' : 'Đã thêm vào yêu thích', 'success');
+    } catch {
+      showToast('Không thể cập nhật yêu thích', 'error');
+    }
   };
 
   return (
@@ -48,6 +68,13 @@ export default function ProductCard({ product }: Props) {
         {product.isBestSeller && (
           <span className="absolute top-2 right-2 bg-amber-500 text-white text-xs font-medium px-2 py-1 rounded">Bán chạy</span>
         )}
+        <button
+          onClick={handleWishlist}
+          className="absolute bottom-2 right-2 p-1.5 bg-white/90 rounded-full shadow hover:bg-white transition"
+          title={liked ? 'Bỏ yêu thích' : 'Thêm yêu thích'}
+        >
+          <Heart size={16} className={liked ? 'text-red-500 fill-red-500' : 'text-gray-400'} />
+        </button>
       </div>
       <div className="p-3 sm:p-4 flex flex-col flex-1">
         <p className="text-xs text-gray-400 mb-1">{product.brand} · {product.categoryName}</p>

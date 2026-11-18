@@ -10,6 +10,7 @@ import userRoutes from './routes/users.js';
 import statsRoutes from './routes/stats.js';
 import couponRoutes from './routes/coupons.js';
 import reviewRoutes from './routes/reviews.js';
+import wishlistRoutes from './routes/wishlist.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -28,5 +29,6 @@ app.use('/api/users', userRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api', reviewRoutes);
+app.use('/api/wishlist', wishlistRoutes);
 
 export default app;

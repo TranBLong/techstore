@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Star, ShoppingCart, Minus, Plus, ChevronRight } from 'lucide-react';
+import { Star, ShoppingCart, Minus, Plus, ChevronRight, Heart } from 'lucide-react';
 import { productService } from '../services/productService';
 import { reviewService } from '../services/reviewService';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useWishlist } from '../contexts/WishlistContext';
 import { formatCurrency } from '../utils/format';
 import ProductCard from '../components/product/ProductCard';
 import EmptyState from '../components/common/EmptyState';
@@ -23,6 +24,7 @@ export default function ProductDetailPage() {
   const { addItem } = useCart();
   const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
+  const { isWishlisted, toggle } = useWishlist();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewTotal, setReviewTotal] = useState(0);
   const [reviewPage, setReviewPage] = useState(1);
@@ -120,15 +122,39 @@ export default function ProductDetailPage() {
               <button onClick={() => setQty(Math.min(product.stock, qty + 1))} className="p-2"><Plus size={16} /></button>
             </div>
           </div>
-          <button
-            onClick={async () => {
-              await addItem(product.id, qty);
-              showToast('Đã thêm vào giỏ', 'success');
-            }}
-            className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
-          >
-            <ShoppingCart size={20} /> Thêm vào giỏ hàng
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                await addItem(product.id, qty);
+                showToast('Đã thêm vào giỏ', 'success');
+              }}
+              className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+            >
+              <ShoppingCart size={20} /> Thêm vào giỏ hàng
+            </button>
+            <button
+              onClick={async () => {
+                if (!isAuthenticated) {
+                  showToast('Vui lòng đăng nhập để thêm yêu thích', 'info');
+                  return;
+                }
+                const liked = isWishlisted(product.id);
+                try {
+                  await toggle(product.id);
+                  showToast(liked ? 'Đã bỏ yêu thích' : 'Đã thêm vào yêu thích', 'success');
+                } catch {
+                  showToast('Không thể cập nhật yêu thích', 'error');
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+              title={isWishlisted(product.id) ? 'Bỏ yêu thích' : 'Thêm yêu thích'}
+            >
+              <Heart
+                size={20}
+                className={isWishlisted(product.id) ? 'text-red-500 fill-red-500' : 'text-gray-500'}
+              />
+            </button>
+          </div>
           {product.specs && typeof product.specs === 'object' && (
             <div className="mt-8">
               <h3 className="font-semibold mb-3">Thông số kỹ thuật</h3>
