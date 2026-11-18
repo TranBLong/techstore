@@ -19,9 +19,10 @@ model User {
   role      String   @default("USER") // USER | ADMIN
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
-  orders    Order[]
-  reviews   Review[]
-  wishlists Wishlist[]
+  orders         Order[]
+  reviews        Review[]
+  wishlists      Wishlist[]
+  passwordResets PasswordReset[]
 }
 
 model Category {
@@ -120,4 +121,14 @@ model Wishlist {
   createdAt DateTime @default(now())
 
   @@unique([userId, productId])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 }

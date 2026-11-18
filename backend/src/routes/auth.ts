@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { prisma } from '../prisma.js';
 import { authRequired, signToken } from '../middleware/auth.js';
 
@@ -70,6 +71,66 @@ router.put('/password', authRequired, async (req, res) => {
   const hash = await bcrypt.hash(newPassword, 10);
   await prisma.user.update({ where: { id: user.id }, data: { password: hash } });
   res.json({ message: 'Đổi mật khẩu thành công' });
+});
+
+/** Quên mật khẩu — luôn trả thông báo chung, không lộ email có tồn tại hay không */
+router.post('/forgot-password', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const genericMessage =
+    'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu.';
+
+  if (!email) {
+    return res.status(400).json({ message: 'Vui lòng nhập email' });
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || !user.isActive) {
+    return res.json({ message: genericMessage });
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 phút
+
+  await prisma.passwordReset.create({
+    data: { userId: user.id, tokenHash, expiresAt },
+  });
+
+  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const resetLink = `${frontendUrl}/dat-lai-mat-khau?token=${token}`;
+  console.log(`[PasswordReset] Link đặt lại mật khẩu cho ${email}: ${resetLink}`);
+
+  const payload: { message: string; resetToken?: string } = { message: genericMessage };
+  if (process.env.NODE_ENV !== 'production') {
+    payload.resetToken = token;
+  }
+  res.json(payload);
+});
+
+/** Đặt lại mật khẩu bằng token */
+router.post('/reset-password', async (req, res) => {
+  const token = String(req.body?.token || '').trim();
+  const password = String(req.body?.password || '');
+
+  if (!token) return res.status(400).json({ message: 'Thiếu token đặt lại mật khẩu' });
+  if (!password || password.length < 6) {
+    return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 6 ký tự' });
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const record = await prisma.passwordReset.findUnique({ where: { tokenHash } });
+
+  if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
+    return res.status(400).json({ message: 'Token không hợp lệ hoặc đã hết hạn' });
+  }
+
+  const hash = await bcrypt.hash(password, 10);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: record.userId }, data: { password: hash } }),
+    prisma.passwordReset.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+  ]);
+
+  res.json({ message: 'Đặt lại mật khẩu thành công' });
 });
 
 export default router;

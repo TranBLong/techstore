@@ -14,6 +14,8 @@ import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import AccountPage from './pages/AccountPage';
 import OrdersPage from './pages/OrdersPage';
 import WishlistPage from './pages/WishlistPage';
@@ -43,6 +45,8 @@ export default function App() {
                 <Route path="thanh-toan" element={<CheckoutPage />} />
                 <Route path="dang-nhap" element={<LoginPage />} />
                 <Route path="dang-ky" element={<RegisterPage />} />
+                <Route path="quen-mat-khau" element={<ForgotPasswordPage />} />
+                <Route path="dat-lai-mat-khau" element={<ResetPasswordPage />} />
                 <Route path="tai-khoan" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
                 <Route path="don-hang" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
                 <Route path="yeu-thich" element={<ProtectedRoute><WishlistPage /></ProtectedRoute>} />
