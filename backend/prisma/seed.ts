@@ -72,6 +72,18 @@ const categories = [
 ];
 
 async function main() {
+  const force = process.argv.includes('--force');
+
+  if (!force) {
+    const existingUsers = await prisma.user.count();
+    if (existingUsers > 0) {
+      console.log(
+        `Database đã có ${existingUsers} user — bỏ qua seed. Dùng npm run db:seed:force nếu muốn xóa và seed lại.`
+      );
+      return;
+    }
+  }
+
   await prisma.order.deleteMany();
   await prisma.product.deleteMany();
   await prisma.category.deleteMany();

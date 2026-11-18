@@ -1,7 +1,19 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'techstore-secret';
+function resolveJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (secret) return secret;
+
+  if (process.env.NODE_ENV === 'production') {
+    console.error('FATAL: JWT_SECRET is required when NODE_ENV=production');
+    process.exit(1);
+  }
+
+  return 'techstore-secret';
+}
+
+const JWT_SECRET = resolveJwtSecret();
 
 export interface AuthPayload {
   userId: string;
