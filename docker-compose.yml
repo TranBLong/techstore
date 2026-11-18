@@ -12,18 +12,24 @@ services:
       - ./backend/public/images:/app/public/images
       - api_data:/app/prisma/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   web:
     image: techstore-web:latest
     build:
       context: .
       args:
-        # Browser gọi API qua máy host — đổi IP nếu truy cập từ máy khác
         VITE_API_URL: http://127.0.0.1:4000/api
     ports:
       - "8080:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
