@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { X, Upload } from 'lucide-react';
 import { productService } from '../../services/productService';
 import { useToast } from '../../contexts/ToastContext';
+import { mediaUrl } from '../../services/api';
 import type { Category } from '../../types';
 
 export default function ProductFormPage() {
@@ -18,11 +20,12 @@ export default function ProductFormPage() {
     salePrice: '',
     stock: '',
     description: '',
-    image: '',
+    images: [] as string[],
     isFeatured: false,
     isBestSeller: false,
     status: 'active',
   });
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     productService.getCategories().then((c) => {
@@ -42,7 +45,7 @@ export default function ProductFormPage() {
           salePrice: p.salePrice != null ? String(p.salePrice) : '',
           stock: String(p.stock),
           description: p.description,
-          image: p.images?.[0] || '',
+          images: Array.isArray(p.images) ? p.images : [],
           isFeatured: p.isFeatured,
           isBestSeller: p.isBestSeller,
           status: p.status,
@@ -52,6 +55,26 @@ export default function ProductFormPage() {
   }, [id, isEdit]);
 
   const set = (key: string, value: any) => setForm((f) => ({ ...f, [key]: value }));
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    setUploading(true);
+    try {
+      const { paths } = await productService.uploadImages(Array.from(files));
+      setForm((f) => ({ ...f, images: [...f.images, ...paths] }));
+      showToast(`Đã tải lên ${paths.length} ảnh`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Upload thất bại', 'error');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setForm((f) => ({ ...f, images: f.images.filter((_, i) => i !== index) }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +86,7 @@ export default function ProductFormPage() {
       salePrice: form.salePrice ? Number(form.salePrice) : null,
       stock: Number(form.stock),
       description: form.description,
-      images: [form.image || '/images/products/placeholder.jpg'],
+      images: form.images.length ? form.images : ['/images/products/placeholder.jpg'],
       isFeatured: form.isFeatured,
       isBestSeller: form.isBestSeller,
       status: form.status,
@@ -121,8 +144,49 @@ export default function ProductFormPage() {
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Đường dẫn ảnh (vd: /images/products/phone-01.jpg)</label>
-          <input value={form.image} onChange={(e) => set('image', e.target.value)} className="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="/images/products/laptop-01.jpg" />
+          <label className="block text-sm font-medium mb-2">Ảnh sản phẩm</label>
+          <div className="flex flex-wrap gap-3 mb-3">
+            {form.images.map((src, i) => (
+              <div key={`${src}-${i}`} className="relative w-20 h-20 rounded-lg overflow-hidden border bg-gray-50">
+                <img src={mediaUrl(src)} alt="" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeImage(i)}
+                  className="absolute top-0.5 right-0.5 p-0.5 bg-red-500 text-white rounded-full hover:bg-red-600"
+                  title="Xóa ảnh"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <label className="inline-flex items-center gap-2 px-4 py-2 border border-dashed rounded-lg text-sm text-gray-600 hover:bg-gray-50 cursor-pointer">
+            <Upload size={16} />
+            {uploading ? 'Đang tải...' : 'Chọn ảnh (JPG/PNG/WEBP, tối đa 2MB)'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              disabled={uploading}
+              onChange={handleUpload}
+              className="hidden"
+            />
+          </label>
+          <p className="text-xs text-gray-400 mt-1">Hoặc dán đường dẫn có sẵn vào danh sách bên dưới</p>
+          <input
+            value={form.images.join(', ')}
+            onChange={(e) =>
+              set(
+                'images',
+                e.target.value
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              )
+            }
+            className="w-full mt-2 px-3 py-2.5 border rounded-lg text-sm"
+            placeholder="/images/products/laptop-01.jpg, /images/products/..."
+          />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Mô tả</label>

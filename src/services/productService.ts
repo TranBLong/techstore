@@ -35,6 +35,15 @@ export const productService = {
     return api(`/products/${id}`, { method: 'DELETE' });
   },
 
+  uploadImages(files: File[]) {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('images', file));
+    return api<{ paths: string[] }>('/products/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
   createCategory(data: { name: string; description?: string }) {
     return api<Category>('/categories', { method: 'POST', body: JSON.stringify(data) });
   },

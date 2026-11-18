@@ -1,9 +1,38 @@
 import { Router } from 'express';
+import path from 'path';
+import crypto from 'crypto';
+import { fileURLToPath } from 'url';
+import multer from 'multer';
 import { prisma } from '../prisma.js';
 import { mapProduct } from '../utils/map.js';
 import { adminRequired } from '../middleware/auth.js';
 
 const router = Router();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadDir = path.join(__dirname, '../../public/images/products');
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    const name = crypto.randomBytes(16).toString('hex') + ext;
+    cb(null, name);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024, files: 5 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.mimetype)) {
+      cb(new Error('Chỉ chấp nhận ảnh JPG, PNG hoặc WEBP'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 router.get('/', async (req, res) => {
   const { q, category, brand, minPrice, maxPrice, sort, status } = req.query;
@@ -62,6 +91,30 @@ router.get('/best-sellers', async (_req, res) => {
     take: 12,
   });
   res.json(list.map((p) => ({ ...mapProduct(p), categoryName: p.category.name })));
+});
+
+/** Upload ảnh sản phẩm (admin) — đặt trước /:id */
+router.post('/upload', adminRequired, (req, res) => {
+  upload.array('images', 5)(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ message: 'Mỗi ảnh tối đa 2MB' });
+      }
+      if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+        return res.status(400).json({ message: 'Tối đa 5 ảnh mỗi lần tải lên' });
+      }
+      return res.status(400).json({ message: err.message || 'Upload thất bại' });
+    }
+    if (err) {
+      return res.status(400).json({ message: err.message || 'Upload thất bại' });
+    }
+    const files = (req.files as Express.Multer.File[]) || [];
+    if (!files.length) {
+      return res.status(400).json({ message: 'Chưa chọn ảnh nào' });
+    }
+    const paths = files.map((f) => `/images/products/${f.filename}`);
+    res.json({ paths });
+  });
 });
 
 router.get('/:id', async (req, res) => {
