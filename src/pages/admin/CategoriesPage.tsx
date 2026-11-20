@@ -38,7 +38,7 @@ export default function AdminCategoriesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Xóa danh mục (và sản phẩm thuộc danh mục)?')) return;
+    if (!confirm('Xóa danh mục này?')) return;
     try {
       await productService.deleteCategory(id);
       showToast('Đã xóa', 'success');

@@ -155,6 +155,63 @@ describe('TechStore API', () => {
     expect(invalidPrice.status).toBe(400);
   });
 
+  it('API danh mục validate dữ liệu và hỗ trợ cập nhật từng phần', async () => {
+    const invalidName = await request(app)
+      .post('/api/categories')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: '   ' });
+    expect(invalidName.status).toBe(400);
+
+    const invalidDescription = await request(app)
+      .post('/api/categories')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Danh mục kiểm thử', description: 'x'.repeat(501) });
+    expect(invalidDescription.status).toBe(400);
+
+    const created = await request(app)
+      .post('/api/categories')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: '  Danh mục kiểm thử  ' });
+    expect(created.status).toBe(201);
+    expect(created.body.name).toBe('Danh mục kiểm thử');
+    expect(created.body.description).toBe('');
+
+    const invalidUpdate = await request(app)
+      .put(`/api/categories/${created.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: ' ' });
+    expect(invalidUpdate.status).toBe(400);
+
+    const partialUpdate = await request(app)
+      .put(`/api/categories/${created.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ description: 'Mô tả mới' });
+    expect(partialUpdate.status).toBe(200);
+    expect(partialUpdate.body.name).toBe('Danh mục kiểm thử');
+    expect(partialUpdate.body.description).toBe('Mô tả mới');
+  });
+
+  it('không xóa danh mục còn sản phẩm và xóa được danh mục rỗng', async () => {
+    const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    const category = await prisma.category.findUniqueOrThrow({ where: { id: product.categoryId } });
+    const productCount = await prisma.product.count({ where: { categoryId: category.id } });
+    const blockedDelete = await request(app)
+      .delete(`/api/categories/${category.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(blockedDelete.status).toBe(400);
+    expect(blockedDelete.body.message).toContain(`còn ${productCount} sản phẩm`);
+    expect(await prisma.product.findUnique({ where: { id: productId } })).not.toBeNull();
+
+    const emptyCategory = await prisma.category.create({
+      data: { name: 'Empty category', slug: `empty-${Date.now()}` },
+    });
+    const deleted = await request(app)
+      .delete(`/api/categories/${emptyCategory.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(deleted.status).toBe(200);
+    expect(await prisma.category.findUnique({ where: { id: emptyCategory.id } })).toBeNull();
+  });
+
   it('forgot-password thiếu email trả 400', async () => {
     const response = await request(app).post('/api/auth/forgot-password').send({});
     expect(response.status).toBe(400);
