@@ -77,7 +77,7 @@ export default function DashboardPage() {
                 <img src={mediaUrl(p.images?.[0])} alt="" className="w-10 h-10 rounded object-cover" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{p.name}</p>
-                  <p className="text-xs text-gray-500">{p.brand}</p>
+                  <p className="text-xs text-gray-500">{p.brand} · {p.soldQuantity} đã bán</p>
                 </div>
                 <span className="text-sm font-medium text-blue-600">{formatCurrency(p.salePrice ?? p.price)}</span>
               </div>

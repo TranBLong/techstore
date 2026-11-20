@@ -49,6 +49,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addItem = async (productId: string, quantity = 1) => {
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      throw new Error('Số lượng sản phẩm không hợp lệ');
+    }
+    const product = await productService.getById(productId);
+    const currentQuantity = orderService.getCart()
+      .find((item) => item.productId === productId)?.quantity ?? 0;
+    if (product.status !== 'active') {
+      throw new Error('Sản phẩm đang ngừng bán');
+    }
+    if (currentQuantity + quantity > product.stock) {
+      throw new Error(
+        product.stock === 0
+          ? 'Sản phẩm đã hết hàng'
+          : `Chỉ còn ${product.stock} sản phẩm trong kho`,
+      );
+    }
     orderService.addToCart(productId, quantity);
     await refresh();
   };

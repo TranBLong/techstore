@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   TicketPercent,
   MessageSquare,
+  Mail,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ToastContainer from '../components/common/Toast';
@@ -26,6 +27,7 @@ const navItems = [
   { to: '/admin/danh-muc', icon: FolderTree, label: 'Danh mục' },
   { to: '/admin/ma-giam-gia', icon: TicketPercent, label: 'Mã giảm giá' },
   { to: '/admin/danh-gia', icon: MessageSquare, label: 'Đánh giá' },
+  { to: '/admin/lien-he', icon: Mail, label: 'Liên hệ' },
 ];
 
 export default function AdminLayout() {

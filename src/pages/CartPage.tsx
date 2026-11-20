@@ -11,6 +11,9 @@ export default function CartPage() {
   const { items, subtotal, updateQuantity, removeItem, clearCart } = useCart();
   const shipping = subtotal > 5000000 || subtotal === 0 ? 0 : 30000;
   const total = subtotal + shipping;
+  const hasUnavailableItems = items.some(
+    (item) => item.product.status !== 'active' || item.quantity > item.product.stock,
+  );
 
   if (items.length === 0) {
     return (
@@ -55,7 +58,11 @@ export default function CartPage() {
                         <Minus size={14} />
                       </button>
                       <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                      <button onClick={() => updateQuantity(item.productId, item.quantity + 1)} className="p-1.5 hover:bg-gray-50">
+                      <button
+                        onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                        disabled={item.quantity >= item.product.stock}
+                        className="p-1.5 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
                         <Plus size={14} />
                       </button>
                     </div>
@@ -63,6 +70,14 @@ export default function CartPage() {
                       <Trash2 size={16} />
                     </button>
                   </div>
+                  {item.product.stock < item.quantity && (
+                    <p className="text-xs text-red-600 mt-2">
+                      Chỉ còn {item.product.stock} sản phẩm trong kho. Vui lòng giảm số lượng.
+                    </p>
+                  )}
+                  {item.product.status !== 'active' && (
+                    <p className="text-xs text-red-600 mt-2">Sản phẩm đang ngừng bán.</p>
+                  )}
                 </div>
                 <div className="hidden sm:block text-right shrink-0">
                   <p className="font-semibold text-gray-900">{formatCurrency(price * item.quantity)}</p>
@@ -90,12 +105,18 @@ export default function CartPage() {
                 <span className="text-blue-600">{formatCurrency(total)}</span>
               </div>
             </div>
-            <Link
-              to="/thanh-toan"
-              className="mt-5 w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"
-            >
-              <ShoppingBag size={18} /> Thanh toán
-            </Link>
+            {hasUnavailableItems ? (
+              <p className="mt-5 text-sm text-red-600">
+                Điều chỉnh sản phẩm không đủ tồn kho trước khi thanh toán.
+              </p>
+            ) : (
+              <Link
+                to="/thanh-toan"
+                className="mt-5 w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"
+              >
+                <ShoppingBag size={18} /> Thanh toán
+              </Link>
+            )}
             <Link to="/san-pham" className="mt-2 w-full block text-center py-2 text-sm text-blue-600 hover:underline">
               Tiếp tục mua sắm
             </Link>

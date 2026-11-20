@@ -17,6 +17,7 @@ export default function AdminOrdersPage() {
   const { showToast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [selected, setSelected] = useState<Order | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -41,7 +42,10 @@ export default function AdminOrdersPage() {
         console.error(e);
         showToast(e instanceof Error ? e.message : 'Không tải được đơn hàng', 'error');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setHasLoaded(true);
+      });
   }, [q, showToast, statusFilter]);
 
   useEffect(() => {
@@ -72,7 +76,18 @@ export default function AdminOrdersPage() {
     }
   };
 
-  if (loading) return <Loading />;
+  const handlePayment = async (id: string, paymentStatus: 'paid' | 'unpaid') => {
+    try {
+      const updated = await orderService.updatePayment(id, paymentStatus);
+      setOrders((prev) => prev.map((order) => order.id === id ? updated : order));
+      if (selected?.id === id) setSelected(updated);
+      showToast('Cập nhật thanh toán thành công', 'success');
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Không thể cập nhật thanh toán', 'error');
+    }
+  };
+
+  if (loading && orders.length === 0 && !hasLoaded) return <Loading />;
 
   return (
     <div className="space-y-4">
@@ -108,6 +123,7 @@ export default function AdminOrdersPage() {
               <th className="px-4 py-3">Khách hàng</th>
               <th className="px-4 py-3">Tổng</th>
               <th className="px-4 py-3">Trạng thái</th>
+              <th className="px-4 py-3">Thanh toán</th>
               <th className="px-4 py-3">Ngày</th>
               <th className="px-4 py-3"></th>
             </tr>
@@ -140,6 +156,19 @@ export default function AdminOrdersPage() {
                     );
                   })()}
                 </td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    disabled={o.status === 'cancelled'}
+                    onClick={() => handlePayment(o.id, o.paymentStatus === 'paid' ? 'unpaid' : 'paid')}
+                    className={`text-xs px-2 py-1 rounded-full font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+                      o.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                    }`}
+                    title={o.status === 'cancelled' ? 'Đơn đã hủy' : 'Nhấn để đổi trạng thái thanh toán'}
+                  >
+                    {o.paymentStatus === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}
+                  </button>
+                </td>
                 <td className="px-4 py-3 text-gray-500">{formatDate(o.createdAt)}</td>
                 <td className="px-4 py-3">
                   <button onClick={() => setSelected(selected?.id === o.id ? null : o)} className="text-blue-600 text-xs hover:underline">Chi tiết</button>
@@ -159,6 +188,11 @@ export default function AdminOrdersPage() {
           <h3 className="font-semibold mb-2">Chi tiết đơn</h3>
           <p>{selected.shippingInfo?.fullName} · {selected.shippingInfo?.phone}</p>
           <p className="text-gray-500 mb-3">{selected.shippingInfo?.address}, {selected.shippingInfo?.district}, {selected.shippingInfo?.city}</p>
+          <p className="text-gray-600 mb-3">
+            Thanh toán: {selected.paymentMethod === 'transfer' ? 'Chuyển khoản' : 'COD'} ·{' '}
+            {selected.paymentStatus === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}
+            {selected.paidAt ? ` lúc ${formatDate(selected.paidAt)}` : ''}
+          </p>
           {(selected.items || []).map((item, i) => (
             <div key={i} className="flex justify-between py-1">
               <span>{item.productName} x{item.quantity}</span>

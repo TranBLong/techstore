@@ -16,6 +16,7 @@ describe('Các chức năng bổ sung', () => {
     await prisma.orderStatusLog.deleteMany();
     await prisma.review.deleteMany();
     await prisma.wishlist.deleteMany();
+    await prisma.contact.deleteMany();
     await prisma.passwordReset.deleteMany();
     await prisma.order.deleteMany();
     await prisma.product.deleteMany();
@@ -124,6 +125,91 @@ describe('Các chức năng bổ sung', () => {
         },
       });
   }
+
+  it('token cũ bị từ chối khi tài khoản bị khóa và role admin được kiểm tra lại từ DB', async () => {
+    try {
+      await prisma.user.update({ where: { id: userId }, data: { isActive: false } });
+      const lockedResponse = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${userToken}`);
+      expect(lockedResponse.status).toBe(401);
+
+      await prisma.user.update({ where: { id: adminId }, data: { role: 'USER' } });
+      const downgradedResponse = await request(app)
+        .get('/api/users')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(downgradedResponse.status).toBe(403);
+    } finally {
+      await prisma.user.update({ where: { id: userId }, data: { isActive: true } });
+      await prisma.user.update({ where: { id: adminId }, data: { role: 'ADMIN' } });
+    }
+  });
+
+  it('lưu liên hệ từ khách và chỉ admin xem được danh sách', async () => {
+    const submitted = await request(app)
+      .post('/api/contacts')
+      .send({ fullName: 'Nguyễn An', email: 'an@example.com', message: 'Tôi cần hỗ trợ.' });
+    expect(submitted.status).toBe(201);
+
+    const denied = await request(app)
+      .get('/api/contacts')
+      .set('Authorization', `Bearer ${userToken}`);
+    expect(denied.status).toBe(403);
+
+    const listed = await request(app)
+      .get('/api/contacts')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.items[0]).toMatchObject({
+      fullName: 'Nguyễn An',
+      email: 'an@example.com',
+      message: 'Tôi cần hỗ trợ.',
+    });
+  });
+
+  it('dashboard chỉ tính doanh thu đã thanh toán và xếp bán chạy theo sản phẩm đã giao', async () => {
+    const product = await createProduct(10);
+    const before = await request(app)
+      .get('/api/stats/dashboard')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(before.status).toBe(200);
+
+    const created = await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        items: [{ productId: product.id, quantity: 4 }],
+        paymentMethod: 'transfer',
+        shippingInfo: {
+          fullName: 'User Features',
+          phone: '0900000000',
+          email: 'features-user@test.com',
+          address: '1 Test',
+          city: 'HN',
+          district: 'HK',
+        },
+      });
+    expect(created.status).toBe(201);
+    const orderId = created.body.id;
+    await request(app).patch(`/api/orders/${orderId}/payment`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ paymentStatus: 'paid' });
+    for (const status of ['processing', 'shipping', 'delivered']) {
+      await request(app).patch(`/api/orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status });
+    }
+
+    const unpaid = await createOrder({ productId: product.id, paymentMethod: 'transfer' });
+    expect(unpaid.status).toBe(201);
+    const after = await request(app)
+      .get('/api/stats/dashboard')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(after.body.totalRevenue).toBe(before.body.totalRevenue + created.body.total);
+    expect(after.body.bestSellers.find((item: { id: string }) => item.id === product.id))
+      .toMatchObject({ soldQuantity: 4 });
+  });
 
   describe('Mã giảm giá', () => {
     it('validate mã phần trăm thành công và áp dụng maxDiscount', async () => {

@@ -34,6 +34,7 @@ import AdminUsersPage from './pages/admin/UsersPage';
 import AdminCategoriesPage from './pages/admin/CategoriesPage';
 import AdminCouponsPage from './pages/admin/CouponsPage';
 import AdminReviewsPage from './pages/admin/ReviewsPage';
+import AdminContactsPage from './pages/admin/ContactsPage';
 
 export default function App() {
   return (
@@ -75,6 +76,7 @@ export default function App() {
                 <Route path="danh-muc" element={<AdminCategoriesPage />} />
                 <Route path="ma-giam-gia" element={<AdminCouponsPage />} />
                 <Route path="danh-gia" element={<AdminReviewsPage />} />
+                <Route path="lien-he" element={<AdminContactsPage />} />
               </Route>
             </Routes>
             </WishlistProvider>

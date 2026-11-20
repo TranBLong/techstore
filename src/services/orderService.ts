@@ -90,4 +90,11 @@ export const orderService = {
       body: JSON.stringify({ status }),
     });
   },
+
+  updatePayment(id: string, paymentStatus: 'paid' | 'unpaid') {
+    return api<Order>(`/orders/${id}/payment`, {
+      method: 'PATCH',
+      body: JSON.stringify({ paymentStatus }),
+    });
+  },
 };

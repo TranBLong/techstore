@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { MapPin, Phone, Mail, Clock } from 'lucide-react';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../contexts/ToastContext';
+import { contactService } from '../services/contactService';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -12,6 +13,7 @@ export default function ContactPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<{ fullName?: string; email?: string; message?: string }>({});
 
   const validate = () => {
@@ -24,11 +26,23 @@ export default function ContactPage() {
     return Object.keys(next).length === 0;
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
-    showToast('Biểu mẫu liên hệ chưa được kết nối dịch vụ gửi tin nhắn.', 'info');
+    setSubmitting(true);
+    try {
+      const result = await contactService.submit({ fullName, email, message });
+      showToast(result.message, 'success');
+      setFullName('');
+      setEmail('');
+      setMessage('');
+      setErrors({});
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : 'Không thể gửi liên hệ', 'error');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -96,9 +110,10 @@ export default function ContactPage() {
             </div>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+              disabled={submitting}
+              className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-60"
             >
-              Gửi liên hệ
+              {submitting ? 'Đang gửi...' : 'Gửi liên hệ'}
             </button>
           </form>
         </div>

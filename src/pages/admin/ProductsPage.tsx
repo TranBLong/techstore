@@ -16,6 +16,7 @@ export default function AdminProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -38,7 +39,10 @@ export default function AdminProductsPage() {
       })
       .catch(console.error)
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+          setHasLoaded(true);
+        }
       });
 
     return () => {
@@ -62,7 +66,7 @@ export default function AdminProductsPage() {
     }
   };
 
-  if (loading) return <Loading />;
+  if (loading && products.length === 0 && !hasLoaded) return <Loading />;
 
   return (
     <div className="space-y-4">

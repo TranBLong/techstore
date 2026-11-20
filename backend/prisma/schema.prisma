@@ -134,3 +134,11 @@ model PasswordReset {
   usedAt    DateTime?
   createdAt DateTime  @default(now())
 }
+
+model Contact {
+  id        String   @id @default(cuid())
+  fullName  String
+  email     String
+  message   String
+  createdAt DateTime @default(now())
+}

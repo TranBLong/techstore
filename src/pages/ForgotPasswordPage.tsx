@@ -40,14 +40,13 @@ export default function ForgotPasswordPage() {
             <span className="text-2xl font-bold">TechStore</span>
           </Link>
           <h1 className="text-2xl font-bold text-gray-900">Quên mật khẩu</h1>
-          <p className="text-gray-500 text-sm mt-1">Nhập email để nhận hướng dẫn đặt lại mật khẩu</p>
+          <p className="text-gray-500 text-sm mt-1">Chức năng demo: email chưa được gửi thật; liên kết đặt lại hiển thị trong console backend.</p>
         </div>
 
         {done ? (
           <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm space-y-4 text-center">
             <p className="text-sm text-gray-600">
-              Nếu email tồn tại trong hệ thống, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu.
-              Vui lòng kiểm tra hộp thư (hoặc console backend khi dev).
+              Đây là chức năng demo, hệ thống chưa gửi email thật. Nếu email tồn tại, liên kết đặt lại được ghi trong console backend.
             </p>
             {devToken && (
               <div className="bg-amber-50 text-amber-800 text-xs px-3 py-2 rounded-lg break-all text-left">

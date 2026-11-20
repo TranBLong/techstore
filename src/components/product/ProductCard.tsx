@@ -27,8 +27,12 @@ export default function ProductCard({ product }: Props) {
   const handleAdd = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    await addItem(product.id, 1);
-    showToast('Đã thêm vào giỏ hàng', 'success');
+    try {
+      await addItem(product.id, 1);
+      showToast('Đã thêm vào giỏ hàng', 'success');
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : 'Không thể thêm vào giỏ hàng', 'error');
+    }
   };
 
   const handleWishlist = async (e: React.MouseEvent) => {
@@ -90,7 +94,12 @@ export default function ProductCard({ product }: Props) {
             <p className="text-base font-bold text-blue-600">{formatCurrency(price)}</p>
             {product.salePrice && <p className="text-xs text-gray-400 line-through">{formatCurrency(product.price)}</p>}
           </div>
-          <button onClick={handleAdd} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition" title="Thêm vào giỏ">
+          <button
+            onClick={handleAdd}
+            disabled={product.stock <= 0}
+            className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
+            title={product.stock <= 0 ? 'Hết hàng' : 'Thêm vào giỏ'}
+          >
             <ShoppingCart size={16} />
           </button>
         </div>

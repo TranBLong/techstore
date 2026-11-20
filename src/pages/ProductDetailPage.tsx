@@ -137,20 +137,25 @@ export default function ProductDetailPage() {
           <div className="flex items-center gap-4 mb-6">
             <span className="text-sm font-medium">Số lượng:</span>
             <div className="flex items-center border rounded-lg">
-              <button onClick={() => setQty(Math.max(1, qty - 1))} className="p-2"><Minus size={16} /></button>
+              <button onClick={() => setQty(Math.max(1, qty - 1))} className="p-2" disabled={product.stock <= 0}><Minus size={16} /></button>
               <span className="w-12 text-center font-medium">{qty}</span>
-              <button onClick={() => setQty(Math.min(product.stock, qty + 1))} className="p-2"><Plus size={16} /></button>
+              <button onClick={() => setQty(Math.min(product.stock, qty + 1))} className="p-2" disabled={product.stock <= 0 || qty >= product.stock}><Plus size={16} /></button>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={async () => {
-                await addItem(product.id, qty);
-                showToast('Đã thêm vào giỏ', 'success');
+                try {
+                  await addItem(product.id, qty);
+                  showToast('Đã thêm vào giỏ', 'success');
+                } catch (error: unknown) {
+                  showToast(error instanceof Error ? error.message : 'Không thể thêm vào giỏ', 'error');
+                }
               }}
-              className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+              disabled={product.stock <= 0}
+              className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <ShoppingCart size={20} /> Thêm vào giỏ hàng
+              <ShoppingCart size={20} /> {product.stock <= 0 ? 'Hết hàng' : 'Thêm vào giỏ hàng'}
             </button>
             <button
               onClick={async () => {
