@@ -18,6 +18,8 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import AccountPage from './pages/AccountPage';
 import OrdersPage from './pages/OrdersPage';
+import OrderSuccessPage from './pages/OrderSuccessPage';
+import OrderDetailPage from './pages/OrderDetailPage';
 import WishlistPage from './pages/WishlistPage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -49,6 +51,8 @@ export default function App() {
                 <Route path="dat-lai-mat-khau" element={<ResetPasswordPage />} />
                 <Route path="tai-khoan" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
                 <Route path="don-hang" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
+                <Route path="don-hang/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
+                <Route path="dat-hang-thanh-cong/:id" element={<ProtectedRoute><OrderSuccessPage /></ProtectedRoute>} />
                 <Route path="yeu-thich" element={<ProtectedRoute><WishlistPage /></ProtectedRoute>} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>

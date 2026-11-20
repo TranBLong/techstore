@@ -73,6 +73,7 @@ export interface Order {
   total: number;
   status: OrderStatus;
   paymentMethod: 'cod' | 'transfer';
+  couponCode?: string | null;
   shippingInfo: {
     fullName: string;
     phone: string;

@@ -50,6 +50,10 @@ export const orderService = {
     return api<Order[]>('/orders/my');
   },
 
+  getById(id: string) {
+    return api<Order>(`/orders/${id}`);
+  },
+
   getAllOrders(params?: Record<string, string>) {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';
     return api<Paginated<Order>>(`/orders${qs}`);

@@ -105,7 +105,7 @@ export default function CheckoutPage() {
     }
     setLoading(true);
     try {
-      await orderService.createOrder({
+      const order = await orderService.createOrder({
         items: items.map((i) => ({
           productId: i.productId,
           productName: i.product.name,
@@ -131,7 +131,7 @@ export default function CheckoutPage() {
       });
       clearCart();
       showToast('Đặt hàng thành công!', 'success');
-      navigate('/don-hang');
+      navigate(`/dat-hang-thanh-cong/${order.id}`);
     } catch (err: any) {
       showToast(err.message || 'Đặt hàng thất bại', 'error');
     } finally {

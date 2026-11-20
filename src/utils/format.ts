@@ -36,3 +36,7 @@ export function getOrderStatusColor(status: string): string {
   };
   return map[status] || 'bg-gray-100 text-gray-800';
 }
+
+export function formatOrderCode(id: string): string {
+  return `TS-${(id || '').slice(-8).toUpperCase()}`;
+}

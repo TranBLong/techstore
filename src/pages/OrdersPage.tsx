@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { orderService } from '../services/orderService';
 import { useToast } from '../contexts/ToastContext';
-import { formatCurrency, formatDate, getOrderStatusLabel, getOrderStatusColor } from '../utils/format';
+import { formatCurrency, formatDate, formatOrderCode, getOrderStatusLabel, getOrderStatusColor } from '../utils/format';
 import EmptyState from '../components/common/EmptyState';
 import Loading from '../components/common/Loading';
 import { mediaUrl } from '../services/api';
@@ -46,7 +46,7 @@ export default function OrdersPage() {
           <div key={order.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 bg-gray-50 border-b border-gray-100">
               <div className="flex items-center gap-3 text-sm">
-                <span className="font-medium">{order.id.slice(0, 12)}…</span>
+                <span className="font-medium">{formatOrderCode(order.id)}</span>
                 <span className="text-gray-500">{formatDate(order.createdAt)}</span>
               </div>
               <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${getOrderStatusColor(order.status)}`}>
@@ -67,9 +67,18 @@ export default function OrdersPage() {
                 ))}
               </div>
               <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
-                <button onClick={() => setSelected(selected?.id === order.id ? null : order)} className="text-sm text-blue-600 hover:underline">
-                  {selected?.id === order.id ? 'Ẩn chi tiết' : 'Xem chi tiết'}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelected(selected?.id === order.id ? null : order)}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    {selected?.id === order.id ? 'Ẩn nhanh' : 'Xem nhanh'}
+                  </button>
+                  <Link to={`/don-hang/${order.id}`} className="text-sm text-blue-600 hover:underline font-medium">
+                    Xem chi tiết
+                  </Link>
+                </div>
                 <p className="font-bold text-blue-600">{formatCurrency(order.total)}</p>
               </div>
               {selected?.id === order.id && (
