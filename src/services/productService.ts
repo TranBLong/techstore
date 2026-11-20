@@ -19,6 +19,11 @@ export const productService = {
     return api<Product[]>('/products/best-sellers');
   },
 
+  getBrands(category?: string) {
+    const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+    return api<string[]>(`/products/brands${qs}`);
+  },
+
   getCategories() {
     return api<Category[]>('/categories');
   },

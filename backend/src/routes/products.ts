@@ -156,6 +156,22 @@ router.get('/best-sellers', async (_req, res) => {
   res.json(list.map((p) => ({ ...mapProduct(p), categoryName: p.category.name })));
 });
 
+router.get('/brands', async (req, res) => {
+  const category = req.query.category ? String(req.query.category) : undefined;
+  const rows = await prisma.product.findMany({
+    where: {
+      status: 'active',
+      brand: { not: '' },
+      ...(category ? { categoryId: category } : {}),
+    },
+    select: { brand: true },
+    distinct: ['brand'],
+    orderBy: { brand: 'asc' },
+  });
+
+  res.json(rows.map((r) => r.brand).filter((brand) => brand.trim() !== ''));
+});
+
 /** Upload ảnh sản phẩm (admin) — đặt trước /:id */
 router.post('/upload', adminRequired, (req, res) => {
   upload.array('images', 5)(req, res, (err) => {

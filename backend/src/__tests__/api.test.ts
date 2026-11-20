@@ -69,6 +69,36 @@ describe('TechStore API', () => {
     expect(response.body.token).toBeTruthy();
   });
 
+  it('liệt kê thương hiệu duy nhất của sản phẩm active và lọc theo danh mục', async () => {
+    const category = await prisma.category.findFirstOrThrow();
+    const otherCategory = await prisma.category.create({
+      data: { name: 'Other Cat', slug: 'brands-test-other-cat' },
+    });
+    const testProducts = [
+      { name: 'Brand Test Apple', slug: 'brands-test-apple', categoryId: category.id, brand: 'Apple', price: 100 },
+      { name: 'Brand Test Apple Duplicate', slug: 'brands-test-apple-duplicate', categoryId: category.id, brand: 'Apple', price: 100 },
+      { name: 'Brand Test Hidden', slug: 'brands-test-hidden', categoryId: category.id, brand: 'Hidden', price: 100, status: 'inactive' },
+      { name: 'Brand Test Empty', slug: 'brands-test-empty', categoryId: category.id, brand: '', price: 100 },
+      { name: 'Brand Test Whitespace', slug: 'brands-test-whitespace', categoryId: category.id, brand: '   ', price: 100 },
+      { name: 'Brand Test Other Category', slug: 'brands-test-other-category', categoryId: otherCategory.id, brand: 'Other', price: 100 },
+    ];
+
+    try {
+      await prisma.product.createMany({ data: testProducts });
+
+      const allBrands = await request(app).get('/api/products/brands');
+      expect(allBrands.status).toBe(200);
+      expect(allBrands.body).toEqual(['Apple', 'Other', 'Test']);
+
+      const categoryBrands = await request(app).get(`/api/products/brands?category=${category.id}`);
+      expect(categoryBrands.status).toBe(200);
+      expect(categoryBrands.body).toEqual(['Apple', 'Test']);
+    } finally {
+      await prisma.product.deleteMany({ where: { slug: { startsWith: 'brands-test-' } } });
+      await prisma.category.delete({ where: { id: otherCategory.id } });
+    }
+  });
+
   it('register thiếu fullName trả 400', async () => {
     const response = await request(app).post('/api/auth/register').send({
       email: 'novalid@test.com', password: 'test1234',

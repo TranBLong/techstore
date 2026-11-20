@@ -1,7 +1,16 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Facebook, Youtube, Mail, Phone, MapPin } from 'lucide-react';
+import { productService } from '../../services/productService';
+import type { Category } from '../../types';
 
 export default function Footer() {
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    productService.getCategories().then(setCategories).catch(console.error);
+  }, []);
+
   return (
     <footer className="bg-slate-900 text-gray-300 mt-auto">
       <div className="max-w-7xl mx-auto px-4 py-12">
@@ -29,11 +38,21 @@ export default function Footer() {
           <div>
             <h4 className="text-white font-semibold mb-4">Danh mục</h4>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/san-pham?category=cat-1" className="hover:text-white transition">Laptop</Link></li>
-              <li><Link to="/san-pham?category=cat-2" className="hover:text-white transition">Điện thoại</Link></li>
-              <li><Link to="/san-pham?category=cat-3" className="hover:text-white transition">Máy tính bảng</Link></li>
-              <li><Link to="/san-pham?category=cat-4" className="hover:text-white transition">Màn hình</Link></li>
-              <li><Link to="/san-pham?category=cat-7" className="hover:text-white transition">Tai nghe</Link></li>
+              {categories.length === 0 ? (
+                <li>
+                  <Link to="/san-pham" className="hover:text-white transition">
+                    Tất cả sản phẩm
+                  </Link>
+                </li>
+              ) : (
+                categories.slice(0, 6).map((cat) => (
+                  <li key={cat.id}>
+                    <Link to={`/san-pham?category=${cat.id}`} className="hover:text-white transition">
+                      {cat.name}
+                    </Link>
+                  </li>
+                ))
+              )}
             </ul>
           </div>
 
