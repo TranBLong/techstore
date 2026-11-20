@@ -1,14 +1,60 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
 import { prisma } from '../prisma.js';
 import { authRequired, signToken } from '../middleware/auth.js';
+import { validate } from '../utils/validate.js';
 
 const router = Router();
 
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ message: 'Thiếu email hoặc mật khẩu' });
+/** Rate limit cho các endpoint auth nhạy cảm. Tắt khi NODE_ENV=test. */
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 phút
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Quá nhiều yêu cầu, vui lòng thử lại sau 15 phút' },
+  skip: () => process.env.NODE_ENV === 'test',
+});
+
+const loginSchema = z.object({
+  email: z.string({ error: 'Email không hợp lệ' }).email('Email không hợp lệ'),
+  password: z.string({ error: 'Vui lòng nhập mật khẩu' }).min(1, 'Vui lòng nhập mật khẩu'),
+});
+
+const registerSchema = z.object({
+  email: z.string({ error: 'Email không hợp lệ' }).email('Email không hợp lệ'),
+  password: z.string({ error: 'Mật khẩu phải có ít nhất 6 ký tự' }).min(6, 'Mật khẩu phải có ít nhất 6 ký tự'),
+  fullName: z.string({ error: 'Họ tên không được để trống' }).min(1, 'Họ tên không được để trống'),
+  phone: z.string().optional(),
+});
+
+const profileSchema = z.object({
+  fullName: z.string().min(1, 'Họ tên không được để trống').optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  district: z.string().optional(),
+});
+
+const passwordSchema = z.object({
+  oldPassword: z.string({ error: 'Vui lòng nhập mật khẩu cũ' }).min(1, 'Vui lòng nhập mật khẩu cũ'),
+  newPassword: z.string({ error: 'Mật khẩu mới phải có ít nhất 6 ký tự' }).min(6, 'Mật khẩu mới phải có ít nhất 6 ký tự'),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string({ error: 'Email không hợp lệ' }).email('Email không hợp lệ'),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string({ error: 'Thiếu token đặt lại mật khẩu' }).min(1, 'Thiếu token đặt lại mật khẩu'),
+  password: z.string({ error: 'Mật khẩu phải có ít nhất 6 ký tự' }).min(6, 'Mật khẩu phải có ít nhất 6 ký tự'),
+});
+
+router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
+  const { email, password } = req.body;
   const user = await prisma.user.findUnique({ where: { email: String(email).toLowerCase() } });
   if (!user) return res.status(401).json({ message: 'Email hoặc mật khẩu không đúng' });
   if (!user.isActive) return res.status(403).json({ message: 'Tài khoản đã bị khóa' });
@@ -19,9 +65,8 @@ router.post('/login', async (req, res) => {
   res.json({ token, user: safe });
 });
 
-router.post('/register', async (req, res) => {
-  const { email, password, fullName, phone } = req.body || {};
-  if (!email || !password || !fullName) return res.status(400).json({ message: 'Thiếu thông tin bắt buộc' });
+router.post('/register', authLimiter, validate(registerSchema), async (req, res) => {
+  const { email, password, fullName, phone } = req.body;
   const exists = await prisma.user.findUnique({ where: { email: String(email).toLowerCase() } });
   if (exists) return res.status(400).json({ message: 'Email đã được sử dụng' });
   const hash = await bcrypt.hash(password, 10);
@@ -46,8 +91,8 @@ router.get('/me', authRequired, async (req, res) => {
   res.json(safe);
 });
 
-router.put('/profile', authRequired, async (req, res) => {
-  const { fullName, phone, address, city, district } = req.body || {};
+router.put('/profile', authRequired, validate(profileSchema), async (req, res) => {
+  const { fullName, phone, address, city, district } = req.body;
   const user = await prisma.user.update({
     where: { id: req.user!.userId },
     data: {
@@ -62,11 +107,11 @@ router.put('/profile', authRequired, async (req, res) => {
   res.json(safe);
 });
 
-router.put('/password', authRequired, async (req, res) => {
-  const { oldPassword, newPassword } = req.body || {};
+router.put('/password', authRequired, validate(passwordSchema), async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
   const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
   if (!user) return res.status(404).json({ message: 'Không tìm thấy user' });
-  const ok = await bcrypt.compare(oldPassword || '', user.password);
+  const ok = await bcrypt.compare(oldPassword, user.password);
   if (!ok) return res.status(400).json({ message: 'Mật khẩu cũ không đúng' });
   const hash = await bcrypt.hash(newPassword, 10);
   await prisma.user.update({ where: { id: user.id }, data: { password: hash } });
@@ -74,14 +119,10 @@ router.put('/password', authRequired, async (req, res) => {
 });
 
 /** Quên mật khẩu — luôn trả thông báo chung, không lộ email có tồn tại hay không */
-router.post('/forgot-password', async (req, res) => {
-  const email = String(req.body?.email || '').trim().toLowerCase();
+router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), async (req, res) => {
+  const email = String(req.body.email).trim().toLowerCase();
   const genericMessage =
     'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu.';
-
-  if (!email) {
-    return res.status(400).json({ message: 'Vui lòng nhập email' });
-  }
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || !user.isActive) {
@@ -108,14 +149,9 @@ router.post('/forgot-password', async (req, res) => {
 });
 
 /** Đặt lại mật khẩu bằng token */
-router.post('/reset-password', async (req, res) => {
-  const token = String(req.body?.token || '').trim();
-  const password = String(req.body?.password || '');
-
-  if (!token) return res.status(400).json({ message: 'Thiếu token đặt lại mật khẩu' });
-  if (!password || password.length < 6) {
-    return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 6 ký tự' });
-  }
+router.post('/reset-password', validate(resetPasswordSchema), async (req, res) => {
+  const token = String(req.body.token).trim();
+  const password = String(req.body.password);
 
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const record = await prisma.passwordReset.findUnique({ where: { tokenHash } });

@@ -69,6 +69,53 @@ describe('TechStore API', () => {
     expect(response.body.token).toBeTruthy();
   });
 
+  it('register thiếu fullName trả 400', async () => {
+    const response = await request(app).post('/api/auth/register').send({
+      email: 'novalid@test.com', password: 'test1234',
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/họ tên|fullName|không được để trống/i);
+  });
+
+  it('register mật khẩu ngắn trả 400', async () => {
+    const response = await request(app).post('/api/auth/register').send({
+      email: 'shortpw@test.com', password: '123', fullName: 'Short',
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/mật khẩu.*6/i);
+  });
+
+  it('login email không hợp lệ trả 400', async () => {
+    const response = await request(app).post('/api/auth/login').send({
+      email: 'khong-phai-email', password: 'test1234',
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/email/i);
+  });
+
+  it('forgot-password thiếu email trả 400', async () => {
+    const response = await request(app).post('/api/auth/forgot-password').send({});
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/email/i);
+  });
+
+  it('reset-password mật khẩu ngắn trả 400', async () => {
+    const response = await request(app).post('/api/auth/reset-password').send({
+      token: 'any-token', password: '123',
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/mật khẩu.*6/i);
+  });
+
+  it('profile fullName rỗng trả 400', async () => {
+    const response = await request(app)
+      .put('/api/auth/profile')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ fullName: '' });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/họ tên|không được để trống/i);
+  });
+
   it('tài khoản bị khóa không đăng nhập được', async () => {
     const response = await request(app).post('/api/auth/login').send({ email: 'locked@test.com', password: 'test1234' });
     expect(response.status).toBe(403);
