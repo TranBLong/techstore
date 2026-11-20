@@ -246,6 +246,8 @@ async function main() {
       total: p1.salePrice ?? p1.price,
       status: 'delivered',
       paymentMethod: 'cod',
+      paymentStatus: 'paid',
+      paidAt: new Date(),
       shippingInfo: JSON.stringify({
         fullName: user.fullName,
         phone: user.phone,
@@ -313,6 +315,11 @@ async function main() {
         total: price,
         status: statuses[i % statuses.length],
         paymentMethod: i % 2 === 0 ? 'cod' : 'transfer',
+        ...(statuses[i % statuses.length] === 'delivered'
+          ? { paymentStatus: 'paid' as const, paidAt: new Date() }
+          : statuses[i % statuses.length] === 'shipping' && i % 2 !== 0
+            ? { paymentStatus: 'paid' as const, paidAt: new Date() }
+            : {}),
         shippingInfo: JSON.stringify({
           fullName: user.fullName,
           phone: user.phone,

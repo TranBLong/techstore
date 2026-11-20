@@ -517,4 +517,114 @@ describe('TechStore API', () => {
     expect(second.status).toBe(400);
     expect(second.body.message).toMatch(/hủy|đã được hủy/i);
   });
+
+  it('đơn transfer mới tạo unpaid; admin PATCH payment paid; user thường bị 403', async () => {
+    await prisma.product.update({ where: { id: productId }, data: { stock: 5 } });
+
+    const created = await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        items: [{ productId, quantity: 1 }],
+        paymentMethod: 'transfer',
+        shippingInfo: {
+          fullName: 'User Test',
+          phone: '0900000000',
+          email: 'user@test.com',
+          address: '1 Test',
+          city: 'HN',
+          district: 'HK',
+        },
+      });
+    expect(created.status).toBe(201);
+    expect(created.body.paymentStatus).toBe('unpaid');
+    expect(created.body.paidAt).toBeNull();
+    const orderId = created.body.id as string;
+
+    const forbidden = await request(app)
+      .patch(`/api/orders/${orderId}/payment`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ paymentStatus: 'paid' });
+    expect(forbidden.status).toBe(403);
+
+    const paid = await request(app)
+      .patch(`/api/orders/${orderId}/payment`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ paymentStatus: 'paid' });
+    expect(paid.status).toBe(200);
+    expect(paid.body.paymentStatus).toBe('paid');
+    expect(paid.body.paidAt).toBeTruthy();
+  });
+
+  it('không đổi được thanh toán của đơn đã cancelled (400)', async () => {
+    await prisma.product.update({ where: { id: productId }, data: { stock: 5 } });
+
+    const created = await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        items: [{ productId, quantity: 1 }],
+        paymentMethod: 'transfer',
+        shippingInfo: {
+          fullName: 'User Test',
+          phone: '0900000000',
+          email: 'user@test.com',
+          address: '1 Test',
+          city: 'HN',
+          district: 'HK',
+        },
+      });
+    expect(created.status).toBe(201);
+    const orderId = created.body.id as string;
+
+    const cancelled = await request(app)
+      .post(`/api/orders/${orderId}/cancel`)
+      .set('Authorization', `Bearer ${userToken}`);
+    expect(cancelled.status).toBe(200);
+
+    const response = await request(app)
+      .patch(`/api/orders/${orderId}/payment`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ paymentStatus: 'paid' });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/hủy/i);
+  });
+
+  it('đơn COD khi delivered tự đánh dấu paymentStatus paid', async () => {
+    await prisma.product.update({ where: { id: productId }, data: { stock: 5 } });
+
+    const created = await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        items: [{ productId, quantity: 1 }],
+        paymentMethod: 'cod',
+        shippingInfo: {
+          fullName: 'User Test',
+          phone: '0900000000',
+          email: 'user@test.com',
+          address: '1 Test',
+          city: 'HN',
+          district: 'HK',
+        },
+      });
+    expect(created.status).toBe(201);
+    expect(created.body.paymentStatus).toBe('unpaid');
+    const orderId = created.body.id as string;
+
+    for (const status of ['processing', 'shipping', 'delivered'] as const) {
+      const res = await request(app)
+        .patch(`/api/orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status });
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe(status);
+      if (status === 'delivered') {
+        expect(res.body.paymentStatus).toBe('paid');
+        expect(res.body.paidAt).toBeTruthy();
+      } else {
+        expect(res.body.paymentStatus).toBe('unpaid');
+      }
+    }
+  });
 });

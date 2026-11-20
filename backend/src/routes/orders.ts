@@ -64,6 +64,12 @@ const createOrderSchema = z.object({
   couponCode: z.string().optional(),
 });
 
+const updatePaymentSchema = z.object({
+  paymentStatus: z.enum(['paid', 'unpaid'], {
+    error: 'Trạng thái thanh toán không hợp lệ',
+  }),
+});
+
 router.get('/my', authRequired, async (req, res) => {
   const list = await prisma.order.findMany({
     where: { userId: req.user!.userId },
@@ -276,6 +282,41 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
   }
 });
 
+router.patch('/:id/payment', adminRequired, validate(updatePaymentSchema), async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const { paymentStatus } = req.body as { paymentStatus: 'paid' | 'unpaid' };
+
+    const order = await prisma.$transaction(async (tx) => {
+      const current = await tx.order.findUnique({ where: { id } });
+      if (!current) throw notFound('Không tìm thấy đơn');
+      if (current.status === 'cancelled') {
+        throw new BusinessError('Không thể đổi trạng thái thanh toán của đơn đã hủy');
+      }
+
+      await tx.order.update({
+        where: { id },
+        data: {
+          paymentStatus,
+          paidAt: paymentStatus === 'paid' ? new Date() : null,
+        },
+      });
+
+      return tx.order.findUniqueOrThrow({
+        where: { id },
+        include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
+      });
+    });
+
+    res.json(mapOrder(order));
+  } catch (err: unknown) {
+    if (err instanceof BusinessError) {
+      return res.status(err.status).json({ message: err.message });
+    }
+    throw err;
+  }
+});
+
 router.patch('/:id/status', adminRequired, async (req, res) => {
   const status = String(req.body?.status || '');
   const allowed = ['pending', 'processing', 'shipping', 'delivered', 'cancelled'];
@@ -294,7 +335,12 @@ router.patch('/:id/status', adminRequired, async (req, res) => {
       if (status === 'cancelled') {
         await restoreOrderStock(tx, current);
       }
-      await tx.order.update({ where: { id }, data: { status } });
+      const data: Prisma.OrderUpdateInput = { status };
+      if (status === 'delivered' && current.paymentMethod === 'cod') {
+        data.paymentStatus = 'paid';
+        data.paidAt = new Date();
+      }
+      await tx.order.update({ where: { id }, data });
       await tx.orderStatusLog.create({ data: { orderId: id, status, changedBy: req.user!.userId } });
       return tx.order.findUniqueOrThrow({
         where: { id }, include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
