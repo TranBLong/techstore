@@ -7,6 +7,8 @@ import { mapOrder } from '../utils/map.js';
 import { isValidStatusTransition, statusTransitionError } from '../utils/orderStatus.js';
 import { validate } from '../utils/validate.js';
 import { assertCouponUsable } from './coupons.js';
+import { BusinessError, notFound, forbidden } from '../utils/errors.js';
+import { restoreOrderStock } from '../utils/orderStock.js';
 
 const router = Router();
 
@@ -214,7 +216,7 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
           data: { stock: { decrement: item.quantity } },
         });
         if (updated.count === 0) {
-          throw new Error(
+          throw new BusinessError(
             `Không đủ tồn kho cho sản phẩm "${item.productName}" (có thể vừa bị đặt hết)`
           );
         }
@@ -224,7 +226,7 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
         const coupon = await tx.coupon.findUnique({ where: { id: couponId } });
         const result = assertCouponUsable(coupon, subtotal);
         if (!result.ok || result.discount !== discount) {
-          throw new Error(result.ok ? 'Mã giảm giá đã thay đổi, vui lòng áp dụng lại' : result.message);
+          throw new BusinessError(result.ok ? 'Mã giảm giá đã thay đổi, vui lòng áp dụng lại' : result.message);
         }
 
         const updated = await tx.coupon.updateMany({
@@ -239,7 +241,7 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
           data: { usedCount: { increment: 1 } },
         });
         if (updated.count !== 1) {
-          throw new Error('Mã giảm giá đã hết lượt sử dụng hoặc hết hạn');
+          throw new BusinessError('Mã giảm giá đã hết lượt sử dụng hoặc hết hạn');
         }
       }
 
@@ -267,11 +269,10 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
 
     res.status(201).json(mapOrder(order));
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Đặt hàng thất bại';
-    // Lỗi tồn kho / nghiệp vụ → 400; lỗi khác → 500
-    const isBusinessError =
-      message.includes('tồn kho') || message.includes('Không đủ') || message.includes('Mã giảm giá');
-    res.status(isBusinessError ? 400 : 500).json({ message });
+    if (err instanceof BusinessError) {
+      return res.status(err.status).json({ message: err.message });
+    }
+    throw err;
   }
 });
 
@@ -283,30 +284,15 @@ router.patch('/:id/status', adminRequired, async (req, res) => {
     const id = String(req.params.id);
     const order = await prisma.$transaction(async (tx) => {
       const current = await tx.order.findUnique({ where: { id } });
-      if (!current) throw new Error('NOT_FOUND');
+      if (!current) throw notFound('Không tìm thấy đơn');
       if (!isValidStatusTransition(current.status, status)) {
-        throw new Error(statusTransitionError(current.status, status));
+        throw new BusinessError(statusTransitionError(current.status, status));
       }
       if (status === current.status) return tx.order.findUniqueOrThrow({
         where: { id }, include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
       });
       if (status === 'cancelled') {
-        let items: { productId: string; quantity: number }[] = [];
-        try { items = JSON.parse(current.items || '[]'); } catch { items = []; }
-        for (const item of items) {
-          const productId = String(item.productId || '');
-          const quantity = Number(item.quantity) || 0;
-          if (productId && quantity > 0) await tx.product.update({
-            where: { id: productId }, data: { stock: { increment: quantity } },
-          });
-        }
-        // Hoàn lượt dùng mã giảm giá (nếu có)
-        if (current.couponCode) {
-          await tx.coupon.updateMany({
-            where: { code: current.couponCode, usedCount: { gt: 0 } },
-            data: { usedCount: { decrement: 1 } },
-          });
-        }
+        await restoreOrderStock(tx, current);
       }
       await tx.order.update({ where: { id }, data: { status } });
       await tx.orderStatusLog.create({ data: { orderId: id, status, changedBy: req.user!.userId } });
@@ -316,9 +302,10 @@ router.patch('/:id/status', adminRequired, async (req, res) => {
     });
     res.json(mapOrder(order));
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Cập nhật thất bại';
-    if (message === 'NOT_FOUND') return res.status(404).json({ message: 'Không tìm thấy đơn' });
-    res.status(400).json({ message });
+    if (err instanceof BusinessError) {
+      return res.status(err.status).json({ message: err.message });
+    }
+    throw err;
   }
 });
 
@@ -328,27 +315,18 @@ router.post('/:id/cancel', authRequired, async (req, res) => {
   try {
     const order = await prisma.$transaction(async (tx) => {
       const current = await tx.order.findUnique({ where: { id } });
-      if (!current) throw new Error('NOT_FOUND');
-      if (current.userId !== req.user!.userId && req.user!.role !== 'ADMIN') throw new Error('FORBIDDEN');
+      if (!current) throw notFound('Không tìm thấy đơn');
+      if (current.userId !== req.user!.userId && req.user!.role !== 'ADMIN') {
+        throw forbidden('Không có quyền');
+      }
       if (!['pending', 'processing'].includes(current.status)) {
-        throw new Error(current.status === 'cancelled' ? 'Đơn đã được hủy trước đó' : 'Chỉ hủy được đơn đang chờ xác nhận hoặc đang xử lý');
+        throw new BusinessError(
+          current.status === 'cancelled'
+            ? 'Đơn đã được hủy trước đó'
+            : 'Chỉ hủy được đơn đang chờ xác nhận hoặc đang xử lý',
+        );
       }
-      let items: { productId: string; quantity: number }[] = [];
-      try { items = JSON.parse(current.items || '[]'); } catch { items = []; }
-      for (const item of items) {
-        const productId = String(item.productId || '');
-        const quantity = Number(item.quantity) || 0;
-        if (productId && quantity > 0) await tx.product.update({
-          where: { id: productId }, data: { stock: { increment: quantity } },
-        });
-      }
-      // Hoàn lượt dùng mã giảm giá (nếu có)
-      if (current.couponCode) {
-        await tx.coupon.updateMany({
-          where: { code: current.couponCode, usedCount: { gt: 0 } },
-          data: { usedCount: { decrement: 1 } },
-        });
-      }
+      await restoreOrderStock(tx, current);
       await tx.order.update({ where: { id }, data: { status: 'cancelled' } });
       await tx.orderStatusLog.create({ data: { orderId: id, status: 'cancelled', changedBy: req.user!.userId } });
       return tx.order.findUniqueOrThrow({
@@ -357,10 +335,10 @@ router.post('/:id/cancel', authRequired, async (req, res) => {
     });
     res.json(mapOrder(order));
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Hủy đơn thất bại';
-    if (message === 'NOT_FOUND') return res.status(404).json({ message: 'Không tìm thấy đơn' });
-    if (message === 'FORBIDDEN') return res.status(403).json({ message: 'Không có quyền' });
-    res.status(400).json({ message });
+    if (err instanceof BusinessError) {
+      return res.status(err.status).json({ message: err.message });
+    }
+    throw err;
   }
 });
 

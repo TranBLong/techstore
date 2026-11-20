@@ -476,4 +476,45 @@ describe('TechStore API', () => {
     expect(response.status).toBe(400);
     expect(response.body.message).toMatch(/JSON|không hợp lệ/i);
   });
+
+  it('user hủy đơn hoàn kho và hủy lần 2 trả 400', async () => {
+    await prisma.product.update({ where: { id: productId }, data: { stock: 5 } });
+    const before = await prisma.product.findUnique({ where: { id: productId } });
+
+    const created = await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        items: [{ productId, quantity: 1 }],
+        paymentMethod: 'cod',
+        shippingInfo: {
+          fullName: 'User Test',
+          phone: '0900000000',
+          email: 'user@test.com',
+          address: '1 Test',
+          city: 'HN',
+          district: 'HK',
+        },
+      });
+    expect(created.status).toBe(201);
+    const orderId = created.body.id as string;
+
+    const afterOrder = await prisma.product.findUnique({ where: { id: productId } });
+    expect(afterOrder!.stock).toBe((before?.stock ?? 0) - 1);
+
+    const cancelled = await request(app)
+      .post(`/api/orders/${orderId}/cancel`)
+      .set('Authorization', `Bearer ${userToken}`);
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.status).toBe('cancelled');
+
+    const afterCancel = await prisma.product.findUnique({ where: { id: productId } });
+    expect(afterCancel!.stock).toBe(before?.stock ?? 0);
+
+    const second = await request(app)
+      .post(`/api/orders/${orderId}/cancel`)
+      .set('Authorization', `Bearer ${userToken}`);
+    expect(second.status).toBe(400);
+    expect(second.body.message).toMatch(/hủy|đã được hủy/i);
+  });
 });
