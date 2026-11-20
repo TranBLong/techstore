@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../prisma.js';
 import { authRequired, adminRequired } from '../middleware/auth.js';
 import { mapOrder } from '../utils/map.js';
+import { isValidStatusTransition, statusTransitionError } from '../utils/orderStatus.js';
 import { validate } from '../utils/validate.js';
 import { assertCouponUsable } from './coupons.js';
 
@@ -73,9 +75,26 @@ router.get('/', adminRequired, async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
   const skip = (page - 1) * limit;
+  const statusFilter = String(req.query.status || '').trim();
+  const q = String(req.query.q || '').trim();
+  const allowedStatuses = ['pending', 'processing', 'shipping', 'delivered', 'cancelled'];
+  const where: Prisma.OrderWhereInput = {};
+
+  if (statusFilter && allowedStatuses.includes(statusFilter)) {
+    where.status = statusFilter;
+  }
+  if (q) {
+    where.OR = [
+      { userName: { contains: q } },
+      { userEmail: { contains: q } },
+      { id: { contains: q } },
+    ];
+  }
+
   const [total, list] = await Promise.all([
-    prisma.order.count(),
+    prisma.order.count({ where }),
     prisma.order.findMany({
+      where,
       orderBy: { createdAt: 'desc' }, skip, take: limit,
       include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
     }),
@@ -265,16 +284,13 @@ router.patch('/:id/status', adminRequired, async (req, res) => {
     const order = await prisma.$transaction(async (tx) => {
       const current = await tx.order.findUnique({ where: { id } });
       if (!current) throw new Error('NOT_FOUND');
-      if (current.status === 'cancelled' || current.status === 'delivered') {
-        throw new Error('Không thể đổi trạng thái đơn đã giao hoặc đã hủy');
+      if (!isValidStatusTransition(current.status, status)) {
+        throw new Error(statusTransitionError(current.status, status));
       }
       if (status === current.status) return tx.order.findUniqueOrThrow({
         where: { id }, include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
       });
       if (status === 'cancelled') {
-        if (!['pending', 'processing'].includes(current.status)) {
-          throw new Error('Chỉ hủy được đơn đang chờ xác nhận hoặc đang xử lý');
-        }
         let items: { productId: string; quantity: number }[] = [];
         try { items = JSON.parse(current.items || '[]'); } catch { items = []; }
         for (const item of items) {

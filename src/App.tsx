@@ -30,6 +30,7 @@ import AdminOrdersPage from './pages/admin/OrdersPage';
 import AdminUsersPage from './pages/admin/UsersPage';
 import AdminCategoriesPage from './pages/admin/CategoriesPage';
 import AdminCouponsPage from './pages/admin/CouponsPage';
+import AdminReviewsPage from './pages/admin/ReviewsPage';
 
 export default function App() {
   return (
@@ -67,6 +68,7 @@ export default function App() {
                 <Route path="nguoi-dung" element={<AdminUsersPage />} />
                 <Route path="danh-muc" element={<AdminCategoriesPage />} />
                 <Route path="ma-giam-gia" element={<AdminCouponsPage />} />
+                <Route path="danh-gia" element={<AdminReviewsPage />} />
               </Route>
             </Routes>
             </WishlistProvider>

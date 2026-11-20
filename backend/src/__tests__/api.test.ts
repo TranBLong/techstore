@@ -290,6 +290,105 @@ describe('TechStore API', () => {
     expect(after!.stock).toBe((before?.stock ?? 0) - 1);
   });
 
+  it('admin chuyển trạng thái đơn hợp lệ (pending -> processing)', async () => {
+    const created = await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        items: [{ productId, quantity: 1 }],
+        paymentMethod: 'cod',
+        shippingInfo: {
+          fullName: 'User Test',
+          phone: '0900000000',
+          email: 'user@test.com',
+          address: '1 Test',
+          city: 'HN',
+          district: 'HK',
+        },
+      });
+    expect(created.status).toBe(201);
+    const orderId = created.body.id as string;
+
+    const response = await request(app)
+      .patch(`/api/orders/${orderId}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'processing' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('processing');
+    expect(response.body.statusLogs?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('admin chuyển nhảy cóc (pending -> delivered) trả 400', async () => {
+    await prisma.product.update({ where: { id: productId }, data: { stock: 5 } });
+
+    const created = await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        items: [{ productId, quantity: 1 }],
+        paymentMethod: 'cod',
+        shippingInfo: {
+          fullName: 'User Test',
+          phone: '0900000000',
+          email: 'user@test.com',
+          address: '1 Test',
+          city: 'HN',
+          district: 'HK',
+        },
+      });
+    expect(created.status).toBe(201);
+    const orderId = created.body.id as string;
+
+    const response = await request(app)
+      .patch(`/api/orders/${orderId}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'delivered' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/Không thể chuyển từ/i);
+  });
+
+  it('admin lọc đơn hàng theo trạng thái và email', async () => {
+    const response = await request(app)
+      .get('/api/orders?status=pending&q=user%40test.com')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.total).toBeGreaterThan(0);
+    expect(response.body.items.every((order: { status: string; userEmail: string }) =>
+      order.status === 'pending' && order.userEmail === 'user@test.com')).toBe(true);
+  });
+
+  it('admin lọc danh sách đánh giá theo số sao và từ khóa', async () => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: 'user@test.com' } });
+    const review = await prisma.review.create({
+      data: { productId, userId: user.id, rating: 5, comment: 'Admin review filter test' },
+    });
+
+    try {
+      const response = await request(app)
+        .get('/api/reviews?rating=5&q=Admin%20review')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.total).toBe(1);
+      expect(response.body.items[0]).toMatchObject({
+        id: review.id,
+        rating: 5,
+        user: { id: user.id, email: user.email },
+        product: { id: productId },
+      });
+
+      const forbidden = await request(app)
+        .get('/api/reviews')
+        .set('Authorization', `Bearer ${userToken}`);
+      expect(forbidden.status).toBe(403);
+    } finally {
+      await prisma.review.delete({ where: { id: review.id } });
+    }
+  });
+
   it('đặt hàng vượt tồn kho bị từ chối', async () => {
     const response = await request(app)
       .post('/api/orders')

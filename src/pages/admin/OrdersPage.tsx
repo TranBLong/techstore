@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { orderService } from '../../services/orderService';
 import { useToast } from '../../contexts/ToastContext';
-import { formatCurrency, formatDate, getOrderStatusLabel, getOrderStatusColor } from '../../utils/format';
+import {
+  formatCurrency,
+  formatDate,
+  formatOrderCode,
+  getAllowedNextStatuses,
+  getOrderStatusLabel,
+  getOrderStatusColor,
+} from '../../utils/format';
 import type { Order, OrderStatus } from '../../types';
 import Loading from '../../components/common/Loading';
 import Pagination from '../../components/common/Pagination';
-
-const statuses: OrderStatus[] = ['pending', 'processing', 'shipping', 'delivered', 'cancelled'];
 
 export default function AdminOrdersPage() {
   const { showToast } = useToast();
@@ -15,20 +20,46 @@ export default function AdminOrdersPage() {
   const [selected, setSelected] = useState<Order | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [qInput, setQInput] = useState('');
+  const [q, setQ] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = (nextPage = page) => {
+  const load = useCallback((nextPage = 1, nextStatus = statusFilter, nextQ = q) => {
     setLoading(true);
-    orderService.getAllOrders({ page: String(nextPage), limit: '12' })
+    const params: Record<string, string> = { page: String(nextPage), limit: '12' };
+    if (nextStatus) params.status = nextStatus;
+    if (nextQ.trim()) params.q = nextQ.trim();
+
+    orderService.getAllOrders(params)
       .then((result) => {
         setOrders(result.items);
         setPage(result.page);
         setTotalPages(result.totalPages);
       })
-      .catch(console.error)
+      .catch((e: unknown) => {
+        console.error(e);
+        showToast(e instanceof Error ? e.message : 'Không tải được đơn hàng', 'error');
+      })
       .finally(() => setLoading(false));
-  };
+  }, [q, showToast, statusFilter]);
 
-  useEffect(() => { load(1); }, []);
+  useEffect(() => {
+    load(1, statusFilter, q);
+  }, [load, q, statusFilter]);
+
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  }, []);
+
+  const onSearchChange = (value: string) => {
+    setQInput(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setQ(value);
+      setPage(1);
+    }, 400);
+  };
 
   const handleStatus = async (id: string, status: OrderStatus) => {
     try {
@@ -46,6 +77,30 @@ export default function AdminOrdersPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Quản lý đơn hàng</h1>
+      <div className="flex flex-col sm:flex-row gap-3">
+        <input
+          type="search"
+          value={qInput}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Tìm theo tên, email hoặc mã đơn..."
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setPage(1);
+          }}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm min-w-[180px]"
+        >
+          <option value="">Tất cả trạng thái</option>
+          <option value="pending">{getOrderStatusLabel('pending')}</option>
+          <option value="processing">{getOrderStatusLabel('processing')}</option>
+          <option value="shipping">{getOrderStatusLabel('shipping')}</option>
+          <option value="delivered">{getOrderStatusLabel('delivered')}</option>
+          <option value="cancelled">{getOrderStatusLabel('cancelled')}</option>
+        </select>
+      </div>
       <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -63,14 +118,27 @@ export default function AdminOrdersPage() {
                 <td className="px-4 py-3">
                   <p className="font-medium">{o.userName}</p>
                   <p className="text-xs text-gray-400">{o.userEmail}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{formatOrderCode(o.id)}</p>
                 </td>
                 <td className="px-4 py-3 font-medium">{formatCurrency(o.total)}</td>
                 <td className="px-4 py-3">
-                  <select value={o.status} onChange={(e) => handleStatus(o.id, e.target.value as OrderStatus)} className={`text-xs px-2 py-1 rounded-full border-0 font-medium ${getOrderStatusColor(o.status)}`}>
-                    {statuses.map((s) => (
-                      <option key={s} value={s}>{getOrderStatusLabel(s)}</option>
-                    ))}
-                  </select>
+                  {(() => {
+                    const nextStatuses = getAllowedNextStatuses(o.status);
+                    const locked = nextStatuses.length === 0;
+                    const options = locked ? [o.status] : [o.status, ...nextStatuses];
+                    return (
+                      <select
+                        value={o.status}
+                        disabled={locked}
+                        onChange={(e) => handleStatus(o.id, e.target.value as OrderStatus)}
+                        className={`text-xs px-2 py-1 rounded-full border-0 font-medium ${getOrderStatusColor(o.status)} ${locked ? 'opacity-70 cursor-not-allowed' : ''}`}
+                      >
+                        {options.map((status) => (
+                          <option key={status} value={status}>{getOrderStatusLabel(status)}</option>
+                        ))}
+                      </select>
+                    );
+                  })()}
                 </td>
                 <td className="px-4 py-3 text-gray-500">{formatDate(o.createdAt)}</td>
                 <td className="px-4 py-3">
@@ -81,7 +149,11 @@ export default function AdminOrdersPage() {
           </tbody>
         </table>
       </div>
-      <Pagination currentPage={page} totalPages={totalPages} onPageChange={(nextPage) => load(nextPage)} />
+      <Pagination
+        currentPage={page}
+        totalPages={totalPages}
+        onPageChange={(nextPage) => load(nextPage, statusFilter, q)}
+      />
       {selected && (
         <div className="bg-white rounded-xl border p-5 text-sm">
           <h3 className="font-semibold mb-2">Chi tiết đơn</h3>

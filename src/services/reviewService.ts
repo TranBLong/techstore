@@ -7,6 +7,24 @@ export const reviewService = {
     return api<ReviewListResponse>(`/products/${productId}/reviews?${params}`);
   },
 
+  listAll(params?: Record<string, string>) {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return api<{
+      items: Array<{
+        id: string;
+        rating: number;
+        comment: string;
+        createdAt: string;
+        user: { id: string; fullName: string; email: string };
+        product: { id: string; name: string };
+      }>;
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    }>(`/reviews${qs}`);
+  },
+
   create(productId: string, data: { rating: number; comment: string }) {
     return api<Review>(`/products/${productId}/reviews`, {
       method: 'POST',

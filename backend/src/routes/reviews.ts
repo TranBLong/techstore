@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authRequired, adminRequired } from '../middleware/auth.js';
 
@@ -117,6 +118,57 @@ router.post('/products/:id/reviews', authRequired, async (req, res) => {
   } catch {
     res.status(400).json({ message: 'Không thể tạo đánh giá' });
   }
+});
+
+router.get('/reviews', adminRequired, async (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
+  const skip = (page - 1) * limit;
+  const ratingRaw = req.query.rating;
+  const rating = ratingRaw !== undefined && ratingRaw !== '' ? Number(ratingRaw) : undefined;
+  const q = String(req.query.q || '').trim();
+  const where: Prisma.ReviewWhereInput = {};
+
+  if (rating !== undefined && Number.isInteger(rating) && rating >= 1 && rating <= 5) {
+    where.rating = rating;
+  }
+  if (q) {
+    where.OR = [
+      { comment: { contains: q } },
+      { product: { name: { contains: q } } },
+      { user: { fullName: { contains: q } } },
+      { user: { email: { contains: q } } },
+    ];
+  }
+
+  const [total, rows] = await Promise.all([
+    prisma.review.count({ where }),
+    prisma.review.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      include: {
+        user: { select: { id: true, fullName: true, email: true } },
+        product: { select: { id: true, name: true } },
+      },
+    }),
+  ]);
+
+  res.json({
+    items: rows.map((review) => ({
+      id: review.id,
+      rating: review.rating,
+      comment: review.comment,
+      createdAt: review.createdAt,
+      user: review.user,
+      product: review.product,
+    })),
+    total,
+    page,
+    limit,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+  });
 });
 
 router.delete('/reviews/:id', adminRequired, async (req, res) => {
