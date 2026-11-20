@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, Edit, Trash2, Search } from 'lucide-react';
 import { couponService } from '../../services/couponService';
 import { useToast } from '../../contexts/ToastContext';
 import type { Coupon } from '../../types';
 import Loading from '../../components/common/Loading';
 import { formatCurrency, formatDate } from '../../utils/format';
 import Pagination from '../../components/common/Pagination';
-
-const PER_PAGE = 12;
+import PageSizeSelect from '../../components/common/PageSizeSelect';
+import { usePageSize } from '../../hooks/usePageSize';
 
 const emptyForm = {
   code: '',
@@ -28,22 +28,56 @@ export default function AdminCouponsPage() {
   const [editing, setEditing] = useState<Coupon | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(coupons.length / PER_PAGE));
-  const visibleCoupons = coupons.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [sort, setSort] = useState('newest');
+  const [perPage, setPerPage] = usePageSize('admin-coupons-page-size');
+  const filteredCoupons = useMemo(() => coupons
+    .filter((coupon) => {
+      if (search.trim() && !coupon.code.toLowerCase().includes(search.trim().toLowerCase())) return false;
+      const expired = coupon.expiresAt != null && new Date(coupon.expiresAt).getTime() < Date.now();
+      if (statusFilter === 'active' && (!coupon.isActive || expired)) return false;
+      if (statusFilter === 'inactive' && coupon.isActive) return false;
+      if (statusFilter === 'expired' && !expired) return false;
+      if (typeFilter && coupon.type !== typeFilter) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sort === 'code-asc') return a.code.localeCompare(b.code);
+      if (sort === 'code-desc') return b.code.localeCompare(a.code);
+      if (sort === 'usage-desc') return b.usedCount - a.usedCount;
+      if (sort === 'expiry-asc') {
+        if (!a.expiresAt) return 1;
+        if (!b.expiresAt) return -1;
+        return a.expiresAt.localeCompare(b.expiresAt);
+      }
+      if (sort === 'oldest') return a.createdAt.localeCompare(b.createdAt);
+      return b.createdAt.localeCompare(a.createdAt);
+    }), [coupons, search, statusFilter, typeFilter, sort]);
+  const totalPages = Math.max(1, Math.ceil(filteredCoupons.length / perPage));
+  const visibleCoupons = filteredCoupons.slice((page - 1) * perPage, page * perPage);
 
   const load = () =>
     couponService
       .getAll()
       .then((result) => {
         setCoupons(result);
-        setPage((current) => Math.min(current, Math.max(1, Math.ceil(result.length / PER_PAGE))));
+        setPage((current) => Math.min(current, Math.max(1, Math.ceil(result.length / perPage))));
       })
-      .catch(console.error)
+      .catch((error: unknown) => {
+        console.error(error);
+        showToast(error instanceof Error ? error.message : 'Không tải được mã giảm giá', 'error');
+      })
       .finally(() => setLoading(false));
 
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, typeFilter, sort]);
 
   const openCreate = () => {
     setEditing(null);
@@ -132,6 +166,33 @@ export default function AdminCouponsPage() {
           <Plus size={16} /> Thêm mã
         </button>
       </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm mã giảm giá..." className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm" />
+        </div>
+        <select aria-label="Lọc trạng thái mã giảm giá" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+          <option value="">Tất cả trạng thái</option>
+          <option value="active">Đang hoạt động</option>
+          <option value="inactive">Đã tắt</option>
+          <option value="expired">Đã hết hạn</option>
+        </select>
+        <select aria-label="Lọc loại mã giảm giá" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+          <option value="">Tất cả loại mã</option>
+          <option value="percent">Phần trăm</option>
+          <option value="fixed">Số tiền cố định</option>
+        </select>
+        <select aria-label="Sắp xếp mã giảm giá" value={sort} onChange={(e) => setSort(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+          <option value="newest">Mới nhất</option>
+          <option value="oldest">Cũ nhất</option>
+          <option value="code-asc">Mã A–Z</option>
+          <option value="code-desc">Mã Z–A</option>
+          <option value="expiry-asc">Sắp hết hạn</option>
+          <option value="usage-desc">Dùng nhiều nhất</option>
+        </select>
+      </div>
+      <p className="text-sm text-gray-500">{filteredCoupons.length} mã giảm giá</p>
 
       {showForm && (
         <div className="bg-white rounded-xl border p-5 space-y-3">
@@ -280,15 +341,18 @@ export default function AdminCouponsPage() {
                 </td>
               </tr>
             ))}
-            {coupons.length === 0 && (
+            {visibleCoupons.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
-                  Chưa có mã giảm giá
+                  {coupons.length === 0 ? 'Chưa có mã giảm giá' : 'Không tìm thấy mã phù hợp'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+      <div className="flex justify-end">
+        <PageSizeSelect value={perPage} onChange={(size) => { setPerPage(size); setPage(1); }} />
       </div>
       <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
     </div>

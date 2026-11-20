@@ -208,11 +208,19 @@ router.get('/reviews', adminRequired, async (req, res) => {
     ];
   }
 
+  const sortOptions: Record<string, Prisma.ReviewOrderByWithRelationInput> = {
+    newest: { createdAt: 'desc' },
+    oldest: { createdAt: 'asc' },
+    'rating-asc': { rating: 'asc' },
+    'rating-desc': { rating: 'desc' },
+  };
+  const orderBy = sortOptions[String(req.query.sort)] ?? sortOptions.newest;
+
   const [total, rows] = await Promise.all([
     prisma.review.count({ where }),
     prisma.review.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy,
       skip,
       take: limit,
       include: {

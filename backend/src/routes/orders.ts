@@ -86,12 +86,22 @@ router.get('/', adminRequired, async (req, res) => {
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
   const skip = (page - 1) * limit;
   const statusFilter = String(req.query.status || '').trim();
+  const paymentStatusFilter = String(req.query.paymentStatus || '').trim();
+  const paymentMethodFilter = String(req.query.paymentMethod || '').trim();
   const q = String(req.query.q || '').trim();
   const allowedStatuses = ['pending', 'processing', 'shipping', 'delivered', 'cancelled'];
+  const allowedPaymentStatuses = ['paid', 'unpaid'];
+  const allowedPaymentMethods = ['cod', 'transfer', 'vnpay', 'momo'];
   const where: Prisma.OrderWhereInput = {};
 
   if (statusFilter && allowedStatuses.includes(statusFilter)) {
     where.status = statusFilter;
+  }
+  if (allowedPaymentStatuses.includes(paymentStatusFilter)) {
+    where.paymentStatus = paymentStatusFilter;
+  }
+  if (allowedPaymentMethods.includes(paymentMethodFilter)) {
+    where.paymentMethod = paymentMethodFilter;
   }
   if (q) {
     where.OR = [
@@ -101,11 +111,20 @@ router.get('/', adminRequired, async (req, res) => {
     ];
   }
 
+  const sortOptions: Record<string, Prisma.OrderOrderByWithRelationInput> = {
+    newest: { createdAt: 'desc' },
+    oldest: { createdAt: 'asc' },
+    'total-asc': { total: 'asc' },
+    'total-desc': { total: 'desc' },
+    'customer-asc': { userName: 'asc' },
+    'customer-desc': { userName: 'desc' },
+  };
+  const orderBy = sortOptions[String(req.query.sort)] ?? sortOptions.newest;
+
   const [total, list] = await Promise.all([
     prisma.order.count({ where }),
     prisma.order.findMany({
-      where,
-      orderBy: { createdAt: 'desc' }, skip, take: limit,
+      where, orderBy, skip, take: limit,
       include: { statusLogs: { orderBy: { createdAt: 'asc' } } },
     }),
   ]);

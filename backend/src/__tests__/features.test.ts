@@ -316,10 +316,12 @@ describe('Các chức năng bổ sung', () => {
       .set('Authorization', `Bearer ${userToken}`);
     expect(denied.status).toBe(403);
 
+    const today = new Date().toISOString().slice(0, 10);
     const listed = await request(app)
-      .get('/api/contacts')
+      .get(`/api/contacts?q=an%40example.com&from=${today}&to=${today}&sort=oldest`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(listed.status).toBe(200);
+    expect(listed.body.total).toBe(1);
     expect(listed.body.items[0]).toMatchObject({
       fullName: 'Nguyễn An',
       email: 'an@example.com',

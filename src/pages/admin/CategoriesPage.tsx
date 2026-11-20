@@ -5,8 +5,8 @@ import { useToast } from '../../contexts/ToastContext';
 import type { Category } from '../../types';
 import Loading from '../../components/common/Loading';
 import Pagination from '../../components/common/Pagination';
-
-const PER_PAGE = 12;
+import PageSizeSelect from '../../components/common/PageSizeSelect';
+import { usePageSize } from '../../hooks/usePageSize';
 
 export default function AdminCategoriesPage() {
   const { showToast } = useToast();
@@ -20,27 +20,40 @@ export default function AdminCategoriesPage() {
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState('');
   const [search, setSearch] = useState('');
+  const [productFilter, setProductFilter] = useState('');
+  const [sort, setSort] = useState('name-asc');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = usePageSize('admin-categories-page-size');
 
   const load = useCallback(async () => {
     try {
       const result = await productService.getCategories();
       setCategories(result);
-      setPage((current) => Math.min(current, Math.max(1, Math.ceil(result.length / PER_PAGE))));
+      setPage((current) => Math.min(current, Math.max(1, Math.ceil(result.length / perPage))));
     } catch (error: unknown) {
       showToast(error instanceof Error ? error.message : 'Không tải được danh mục', 'error');
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [showToast, perPage]);
 
   useEffect(() => { void load(); }, [load]);
 
-  const filteredCategories = categories.filter((category) =>
-    `${category.name} ${category.description}`.toLowerCase().includes(search.trim().toLowerCase()),
-  );
-  const totalPages = Math.max(1, Math.ceil(filteredCategories.length / PER_PAGE));
-  const visibleCategories = filteredCategories.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const filteredCategories = categories
+    .filter((category) => {
+      if (!`${category.name} ${category.description}`.toLowerCase().includes(search.trim().toLowerCase())) return false;
+      if (productFilter === 'has-products' && !(category.productCount ?? 0)) return false;
+      if (productFilter === 'empty' && (category.productCount ?? 0) > 0) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sort === 'name-desc') return b.name.localeCompare(a.name, 'vi');
+      if (sort === 'products-desc') return (b.productCount ?? 0) - (a.productCount ?? 0);
+      if (sort === 'products-asc') return (a.productCount ?? 0) - (b.productCount ?? 0);
+      return a.name.localeCompare(b.name, 'vi');
+    });
+  const totalPages = Math.max(1, Math.ceil(filteredCategories.length / perPage));
+  const visibleCategories = filteredCategories.slice((page - 1) * perPage, page * perPage);
 
   const closeForm = () => {
     setShowForm(false);
@@ -179,8 +192,8 @@ export default function AdminCategoriesPage() {
         </section>
       )}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-sm">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="relative">
           <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="search"
@@ -191,9 +204,18 @@ export default function AdminCategoriesPage() {
             className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
           />
         </div>
-        <p className="text-sm text-gray-500">
-          {filteredCategories.length} kết quả
-        </p>
+        <select aria-label="Lọc danh mục theo số sản phẩm" value={productFilter} onChange={(event) => { setProductFilter(event.target.value); setPage(1); }} className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm">
+          <option value="">Tất cả danh mục</option>
+          <option value="has-products">Có sản phẩm</option>
+          <option value="empty">Chưa có sản phẩm</option>
+        </select>
+        <select aria-label="Sắp xếp danh mục" value={sort} onChange={(event) => { setSort(event.target.value); setPage(1); }} className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm">
+          <option value="name-asc">Tên A–Z</option>
+          <option value="name-desc">Tên Z–A</option>
+          <option value="products-desc">Nhiều sản phẩm nhất</option>
+          <option value="products-asc">Ít sản phẩm nhất</option>
+        </select>
+        <p className="text-sm text-gray-500 sm:col-span-2 lg:col-span-3">{filteredCategories.length} kết quả</p>
       </div>
 
       {visibleCategories.length === 0 ? (
@@ -202,12 +224,12 @@ export default function AdminCategoriesPage() {
             <FolderOpen size={22} />
           </span>
           <h2 className="mt-4 font-semibold text-gray-900">
-            {search ? 'Không tìm thấy danh mục' : 'Chưa có danh mục'}
+            {search || productFilter ? 'Không tìm thấy danh mục' : 'Chưa có danh mục'}
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            {search ? 'Thử từ khóa khác hoặc xóa nội dung tìm kiếm.' : 'Tạo danh mục đầu tiên để sắp xếp sản phẩm.'}
+            {search || productFilter ? 'Thử từ khóa khác hoặc xóa bộ lọc.' : 'Tạo danh mục đầu tiên để sắp xếp sản phẩm.'}
           </p>
-          {!search && (
+          {!search && !productFilter && (
             <button type="button" onClick={openCreateForm} className="mt-4 text-sm font-medium text-blue-600 hover:underline">
               Thêm danh mục
             </button>
@@ -258,6 +280,9 @@ export default function AdminCategoriesPage() {
         </div>
       )}
 
+      <div className="flex justify-end">
+        <PageSizeSelect value={perPage} onChange={(size) => { setPerPage(size); setPage(1); }} />
+      </div>
       <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );

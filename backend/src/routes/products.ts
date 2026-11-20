@@ -116,7 +116,7 @@ router.get('/', async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
   const skip = (page - 1) * limit;
-  const where: any = {};
+  const where: Prisma.ProductWhereInput = {};
   if (status && status !== 'all') where.status = String(status);
   else if (!status) where.status = 'active';
   // status=all => no filter
@@ -135,11 +135,19 @@ router.get('/', async (req, res) => {
     if (maxPrice) where.price.lte = Number(maxPrice);
   }
 
-  let orderBy: any = { createdAt: 'desc' };
-  if (sort === 'price-asc') orderBy = { price: 'asc' };
-  if (sort === 'price-desc') orderBy = { price: 'desc' };
-  if (sort === 'rating') orderBy = { rating: 'desc' };
-  if (sort === 'bestseller') orderBy = [{ isBestSeller: 'desc' }, { createdAt: 'desc' }];
+  const sortOptions: Record<string, Prisma.ProductOrderByWithRelationInput | Prisma.ProductOrderByWithRelationInput[]> = {
+    'name-asc': { name: 'asc' },
+    'name-desc': { name: 'desc' },
+    'price-asc': { price: 'asc' },
+    'price-desc': { price: 'desc' },
+    'stock-asc': { stock: 'asc' },
+    'stock-desc': { stock: 'desc' },
+    rating: { rating: 'desc' },
+    bestseller: [{ isBestSeller: 'desc' }, { createdAt: 'desc' }],
+    oldest: { createdAt: 'asc' },
+    newest: { createdAt: 'desc' },
+  };
+  const orderBy = sortOptions[String(sort)] ?? sortOptions.newest;
 
   const [total, list] = await Promise.all([
     prisma.product.count({ where }),
@@ -188,9 +196,10 @@ router.get('/best-sellers', async (_req, res) => {
 
 router.get('/brands', async (req, res) => {
   const category = req.query.category ? String(req.query.category) : undefined;
+  const includeInactive = req.query.status === 'all';
   const rows = await prisma.product.findMany({
     where: {
-      status: 'active',
+      ...(!includeInactive && { status: 'active' }),
       brand: { not: '' },
       ...(category ? { categoryId: category } : {}),
     },

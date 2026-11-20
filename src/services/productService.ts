@@ -19,8 +19,12 @@ export const productService = {
     return api<Product[]>('/products/best-sellers');
   },
 
-  getBrands(category?: string) {
-    const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+  getBrands(category?: string, status = 'active') {
+    const params = new URLSearchParams();
+    if (category) params.set('category', category);
+    if (status !== 'active') params.set('status', status);
+    const query = params.toString();
+    const qs = query ? `?${query}` : '';
     return api<string[]>(`/products/brands${qs}`);
   },
 

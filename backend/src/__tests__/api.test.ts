@@ -99,12 +99,41 @@ describe('TechStore API', () => {
       expect(allBrands.status).toBe(200);
       expect(allBrands.body).toEqual(['Apple', 'Other', 'Test']);
 
+      const adminBrands = await request(app).get('/api/products/brands?status=all');
+      expect(adminBrands.status).toBe(200);
+      expect(adminBrands.body).toEqual(['Apple', 'Hidden', 'Other', 'Test']);
+
       const categoryBrands = await request(app).get(`/api/products/brands?category=${category.id}`);
       expect(categoryBrands.status).toBe(200);
       expect(categoryBrands.body).toEqual(['Apple', 'Test']);
     } finally {
       await prisma.product.deleteMany({ where: { slug: { startsWith: 'brands-test-' } } });
       await prisma.category.delete({ where: { id: otherCategory.id } });
+    }
+  });
+
+  it('lọc và sắp xếp danh sách sản phẩm theo bộ lọc quản trị', async () => {
+    const category = await prisma.category.findFirstOrThrow();
+    const slugs = ['admin-filter-alpha', 'admin-filter-beta'];
+    await prisma.product.createMany({
+      data: [
+        { name: 'Admin Filter Alpha', slug: slugs[0], categoryId: category.id, brand: 'FilterBrand', price: 500, stock: 5 },
+        { name: 'Admin Filter Beta', slug: slugs[1], categoryId: category.id, brand: 'FilterBrand', price: 200, stock: 10 },
+      ],
+    });
+
+    try {
+      const response = await request(app)
+        .get(`/api/products?status=all&category=${category.id}&brand=FilterBrand&q=Admin%20Filter&minPrice=100&maxPrice=600&sort=stock-desc&limit=2`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.total).toBe(2);
+      expect(response.body.items.map((product: { name: string }) => product.name)).toEqual([
+        'Admin Filter Beta',
+        'Admin Filter Alpha',
+      ]);
+    } finally {
+      await prisma.product.deleteMany({ where: { slug: { in: slugs } } });
     }
   });
 
@@ -393,13 +422,17 @@ describe('TechStore API', () => {
 
   it('admin lọc đơn hàng theo trạng thái và email', async () => {
     const response = await request(app)
-      .get('/api/orders?status=pending&q=user%40test.com')
+      .get('/api/orders?status=pending&paymentStatus=unpaid&paymentMethod=cod&q=user%40test.com&sort=total-desc')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(response.status).toBe(200);
     expect(response.body.total).toBeGreaterThan(0);
-    expect(response.body.items.every((order: { status: string; userEmail: string }) =>
-      order.status === 'pending' && order.userEmail === 'user@test.com')).toBe(true);
+    expect(response.body.items.every((order: { status: string; userEmail: string; paymentStatus: string; paymentMethod: string }) =>
+      order.status === 'pending' && order.userEmail === 'user@test.com'
+      && order.paymentStatus === 'unpaid' && order.paymentMethod === 'cod')).toBe(true);
+    expect(response.body.items.map((order: { total: number }) => order.total)).toEqual(
+      [...response.body.items.map((order: { total: number }) => order.total)].sort((a: number, b: number) => b - a),
+    );
   });
 
   it('admin lọc danh sách đánh giá theo số sao và từ khóa', async () => {
@@ -428,6 +461,30 @@ describe('TechStore API', () => {
       expect(forbidden.status).toBe(403);
     } finally {
       await prisma.review.delete({ where: { id: review.id } });
+    }
+  });
+
+  it('admin sắp xếp đánh giá theo số sao', async () => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: 'user@test.com' } });
+    const admin = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@test.com' } });
+    const reviews = await Promise.all([
+      prisma.review.create({
+        data: { productId, userId: user.id, rating: 5, comment: 'Admin review sort test' },
+      }),
+      prisma.review.create({
+        data: { productId, userId: admin.id, rating: 2, comment: 'Admin review sort test' },
+      }),
+    ]);
+
+    try {
+      const response = await request(app)
+        .get('/api/reviews?q=Admin%20review%20sort%20test&sort=rating-asc')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.items.map((review: { rating: number }) => review.rating)).toEqual([2, 5]);
+    } finally {
+      await prisma.review.deleteMany({ where: { id: { in: reviews.map((review) => review.id) } } });
     }
   });
 

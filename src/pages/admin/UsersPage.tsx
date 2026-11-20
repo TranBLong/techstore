@@ -6,8 +6,8 @@ import type { User, Role } from '../../types';
 import Loading from '../../components/common/Loading';
 import Pagination from '../../components/common/Pagination';
 import { UserPlus, Trash2 } from 'lucide-react';
-
-const PER_PAGE = 12;
+import PageSizeSelect from '../../components/common/PageSizeSelect';
+import { usePageSize } from '../../hooks/usePageSize';
 
 export default function AdminUsersPage() {
   const { showToast } = useToast();
@@ -17,7 +17,9 @@ export default function AdminUsersPage() {
   const [q, setQ] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | Role>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'active' | 'locked'>('ALL');
+  const [sort, setSort] = useState('newest');
   const [creating, setCreating] = useState(false);
+  const [perPage, setPerPage] = usePageSize('admin-users-page-size');
   const [newUser, setNewUser] = useState({ email: '', password: '', fullName: '', phone: '', role: 'USER' as Role });
 
   const filteredUsers = useMemo(() => {
@@ -28,11 +30,19 @@ export default function AdminUsersPage() {
       if (statusFilter === 'locked' && user.isActive) return false;
       if (!keyword) return true;
       return `${user.fullName} ${user.email} ${user.phone || ''}`.toLowerCase().includes(keyword);
+    }).sort((a, b) => {
+      switch (sort) {
+        case 'oldest': return a.createdAt.localeCompare(b.createdAt);
+        case 'name-asc': return a.fullName.localeCompare(b.fullName, 'vi');
+        case 'name-desc': return b.fullName.localeCompare(a.fullName, 'vi');
+        case 'email-asc': return a.email.localeCompare(b.email);
+        default: return b.createdAt.localeCompare(a.createdAt);
+      }
     });
-  }, [users, q, roleFilter, statusFilter]);
+  }, [users, q, roleFilter, statusFilter, sort]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PER_PAGE));
-  const visibleUsers = filteredUsers.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / perPage));
+  const visibleUsers = filteredUsers.slice((page - 1) * perPage, page * perPage);
 
   useEffect(() => {
     userService.getAll().then(setUsers).catch(console.error).finally(() => setLoading(false));
@@ -44,7 +54,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [q, roleFilter, statusFilter]);
+  }, [q, roleFilter, statusFilter, sort]);
 
   const patch = async (id: string, data: Partial<User>) => {
     try {
@@ -61,6 +71,7 @@ export default function AdminUsersPage() {
     try {
       const user = await userService.create(newUser);
       setUsers((current) => [user, ...current]);
+      setPage(1);
       setNewUser({ email: '', password: '', fullName: '', phone: '', role: 'USER' });
       setCreating(false);
       showToast('Đã tạo người dùng', 'success');
@@ -130,6 +141,21 @@ export default function AdminUsersPage() {
           <option value="active">Hoạt động</option>
           <option value="locked">Bị khóa</option>
         </select>
+        <select
+          aria-label="Sắp xếp người dùng"
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm min-w-[160px]"
+        >
+          <option value="newest">Mới nhất</option>
+          <option value="oldest">Cũ nhất</option>
+          <option value="name-asc">Tên A–Z</option>
+          <option value="name-desc">Tên Z–A</option>
+          <option value="email-asc">Email A–Z</option>
+        </select>
+      </div>
+      <div className="flex justify-end">
+        <PageSizeSelect value={perPage} onChange={(size) => { setPerPage(size); setPage(1); }} />
       </div>
       <div className="bg-white rounded-xl border overflow-x-auto">
         <table className="w-full text-sm">

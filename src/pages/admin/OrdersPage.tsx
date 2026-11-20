@@ -12,6 +12,8 @@ import {
 import type { Order, OrderStatus } from '../../types';
 import Loading from '../../components/common/Loading';
 import Pagination from '../../components/common/Pagination';
+import PageSizeSelect from '../../components/common/PageSizeSelect';
+import { usePageSize } from '../../hooks/usePageSize';
 
 export default function AdminOrdersPage() {
   const { showToast } = useToast();
@@ -21,22 +23,30 @@ export default function AdminOrdersPage() {
   const [selected, setSelected] = useState<Order | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('');
+  const [sort, setSort] = useState('newest');
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
+  const [perPage, setPerPage] = usePageSize('admin-orders-page-size');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback((nextPage = 1, nextStatus = statusFilter, nextQ = q) => {
     setLoading(true);
-    const params: Record<string, string> = { page: String(nextPage), limit: '12' };
+    const params: Record<string, string> = { page: String(nextPage), limit: String(perPage), sort };
     if (nextStatus) params.status = nextStatus;
     if (nextQ.trim()) params.q = nextQ.trim();
+    if (paymentStatusFilter) params.paymentStatus = paymentStatusFilter;
+    if (paymentMethodFilter) params.paymentMethod = paymentMethodFilter;
 
     orderService.getAllOrders(params)
       .then((result) => {
         setOrders(result.items);
         setPage(result.page);
         setTotalPages(result.totalPages);
+        setTotal(result.total);
       })
       .catch((e: unknown) => {
         console.error(e);
@@ -46,11 +56,11 @@ export default function AdminOrdersPage() {
         setLoading(false);
         setHasLoaded(true);
       });
-  }, [q, showToast, statusFilter]);
+  }, [q, showToast, statusFilter, paymentStatusFilter, paymentMethodFilter, sort, perPage]);
 
   useEffect(() => {
     load(1, statusFilter, q);
-  }, [load, q, statusFilter]);
+  }, [load, q, statusFilter, paymentStatusFilter, paymentMethodFilter, sort]);
 
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -92,13 +102,13 @@ export default function AdminOrdersPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Quản lý đơn hàng</h1>
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <input
           type="search"
           value={qInput}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Tìm theo tên, email hoặc mã đơn..."
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
         />
         <select
           value={statusFilter}
@@ -115,7 +125,43 @@ export default function AdminOrdersPage() {
           <option value="delivered">{getOrderStatusLabel('delivered')}</option>
           <option value="cancelled">{getOrderStatusLabel('cancelled')}</option>
         </select>
+        <select
+          aria-label="Lọc trạng thái thanh toán"
+          value={paymentStatusFilter}
+          onChange={(e) => { setPaymentStatusFilter(e.target.value); setPage(1); }}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="">Tất cả thanh toán</option>
+          <option value="paid">Đã thanh toán</option>
+          <option value="unpaid">Chưa thanh toán</option>
+        </select>
+        <select
+          aria-label="Lọc phương thức thanh toán"
+          value={paymentMethodFilter}
+          onChange={(e) => { setPaymentMethodFilter(e.target.value); setPage(1); }}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="">Tất cả phương thức</option>
+          <option value="cod">COD</option>
+          <option value="transfer">Chuyển khoản</option>
+          <option value="vnpay">VNPay</option>
+          <option value="momo">MoMo</option>
+        </select>
+        <select
+          aria-label="Sắp xếp đơn hàng"
+          value={sort}
+          onChange={(e) => { setSort(e.target.value); setPage(1); }}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="newest">Mới nhất</option>
+          <option value="oldest">Cũ nhất</option>
+          <option value="total-desc">Giá trị cao nhất</option>
+          <option value="total-asc">Giá trị thấp nhất</option>
+          <option value="customer-asc">Khách hàng A–Z</option>
+          <option value="customer-desc">Khách hàng Z–A</option>
+        </select>
       </div>
+      <p className="text-sm text-gray-500">{total} đơn hàng</p>
       <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -177,6 +223,15 @@ export default function AdminOrdersPage() {
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="flex justify-end">
+        <PageSizeSelect
+          value={perPage}
+          onChange={(size) => {
+            setPerPage(size);
+            setPage(1);
+          }}
+        />
       </div>
       <Pagination
         currentPage={page}

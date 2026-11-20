@@ -6,6 +6,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { formatDate } from '../../utils/format';
 import Loading from '../../components/common/Loading';
 import Pagination from '../../components/common/Pagination';
+import PageSizeSelect from '../../components/common/PageSizeSelect';
+import { usePageSize } from '../../hooks/usePageSize';
 
 type AdminReview = {
   id: string;
@@ -37,15 +39,18 @@ export default function AdminReviewsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [ratingFilter, setRatingFilter] = useState('');
+  const [sort, setSort] = useState('newest');
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [perPage, setPerPage] = usePageSize('admin-reviews-page-size');
 
   const load = useCallback((nextPage = 1, nextRating = ratingFilter, nextQ = q) => {
     setLoading(true);
-    const params: Record<string, string> = { page: String(nextPage), limit: '12' };
+    const params: Record<string, string> = { page: String(nextPage), limit: String(perPage) };
     if (nextRating) params.rating = nextRating;
     if (nextQ.trim()) params.q = nextQ.trim();
+    params.sort = sort;
 
     reviewService.listAll(params)
       .then((result) => {
@@ -58,11 +63,11 @@ export default function AdminReviewsPage() {
         showToast(e instanceof Error ? e.message : 'Không tải được đánh giá', 'error');
       })
       .finally(() => setLoading(false));
-  }, [q, ratingFilter, showToast]);
+  }, [q, ratingFilter, showToast, sort, perPage]);
 
   useEffect(() => {
     load(1, ratingFilter, q);
-  }, [load, q, ratingFilter]);
+  }, [load, q, ratingFilter, sort]);
 
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -82,7 +87,7 @@ export default function AdminReviewsPage() {
     try {
       await reviewService.remove(id);
       showToast('Đã xóa đánh giá', 'success');
-      load(page, ratingFilter, q);
+      load(items.length === 1 && page > 1 ? page - 1 : page, ratingFilter, q);
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : 'Xóa thất bại', 'error');
     }
@@ -94,13 +99,13 @@ export default function AdminReviewsPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Quản lý đánh giá</h1>
 
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <input
           type="search"
           value={qInput}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Tìm theo nội dung, sản phẩm, người dùng..."
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
         />
         <select
           value={ratingFilter}
@@ -114,6 +119,17 @@ export default function AdminReviewsPage() {
           {[5, 4, 3, 2, 1].map((rating) => (
             <option key={rating} value={String(rating)}>{rating} sao</option>
           ))}
+        </select>
+        <select
+          aria-label="Sắp xếp đánh giá"
+          value={sort}
+          onChange={(e) => { setSort(e.target.value); setPage(1); }}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="newest">Mới nhất</option>
+          <option value="oldest">Cũ nhất</option>
+          <option value="rating-desc">Nhiều sao nhất</option>
+          <option value="rating-asc">Ít sao nhất</option>
         </select>
       </div>
 
@@ -172,6 +188,15 @@ export default function AdminReviewsPage() {
         )}
       </div>
 
+      <div className="flex justify-end">
+        <PageSizeSelect
+          value={perPage}
+          onChange={(size) => {
+            setPerPage(size);
+            setPage(1);
+          }}
+        />
+      </div>
       <Pagination
         currentPage={page}
         totalPages={totalPages}

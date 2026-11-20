@@ -35,6 +35,17 @@ export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [navLimit, setNavLimit] = useState(() => {
+    const stored = window.localStorage.getItem('admin-nav-limit');
+    const value = stored ? Number(stored) : 6;
+    return [6, 8].includes(value) ? value : 6;
+  });
+  const visibleNavItems = navItems.slice(0, navLimit);
+
+  const handleNavLimitChange = (value: number) => {
+    setNavLimit(value);
+    window.localStorage.setItem('admin-nav-limit', String(value));
+  };
 
   const handleLogout = () => {
     logout();
@@ -44,7 +55,7 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-gray-100 flex">
       {/* Sidebar desktop */}
-      <aside className="hidden lg:flex w-64 bg-slate-900 text-white flex-col shrink-0">
+      <aside className="hidden lg:flex w-64 h-screen sticky top-0 bg-slate-900 text-white flex-col shrink-0">
         <div className="p-5 border-b border-slate-700">
           <Link to="/admin/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -53,8 +64,8 @@ export default function AdminLayout() {
             <span className="font-bold text-lg">TechStore Admin</span>
           </Link>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
-          {navItems.map((item) => (
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -69,7 +80,19 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="p-3 border-t border-slate-700 space-y-1">
+        <div className="p-3 border-t border-slate-700 space-y-2">
+          <label className="flex items-center justify-between px-3 text-xs text-slate-300">
+            <span>Số mục menu</span>
+            <select
+              aria-label="Số mục menu"
+              value={navLimit}
+              onChange={(event) => handleNavLimitChange(Number(event.target.value))}
+              className="ml-2 border border-slate-600 rounded bg-slate-800 px-2 py-1 text-white"
+            >
+              <option value={6}>6</option>
+              <option value={8}>Tất cả</option>
+            </select>
+          </label>
           <Link to="/" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-slate-800">
             <ChevronLeft size={18} /> Về trang chủ
           </Link>
@@ -91,8 +114,8 @@ export default function AdminLayout() {
               <span className="font-bold">TechStore Admin</span>
               <button onClick={() => setSidebarOpen(false)}><X size={20} /></button>
             </div>
-            <nav className="flex-1 p-3 space-y-1">
-              {navItems.map((item) => (
+            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+              {visibleNavItems.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
