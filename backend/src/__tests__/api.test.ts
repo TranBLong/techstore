@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
 import app from '../app.js';
@@ -246,6 +246,39 @@ describe('TechStore API', () => {
     const response = await request(app).post('/api/auth/forgot-password').send({});
     expect(response.status).toBe(400);
     expect(response.body.message).toMatch(/email/i);
+  });
+
+  it('chỉ trả reset token khi được bật ngoài production', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalExposeResetToken = process.env.EXPOSE_RESET_TOKEN;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      process.env.NODE_ENV = 'test';
+      delete process.env.EXPOSE_RESET_TOKEN;
+      const disabled = await request(app).post('/api/auth/forgot-password').send({ email: 'user@test.com' });
+      expect(disabled.status).toBe(200);
+      expect(disabled.body.resetToken).toBeUndefined();
+
+      process.env.EXPOSE_RESET_TOKEN = 'true';
+      const enabled = await request(app).post('/api/auth/forgot-password').send({ email: 'user@test.com' });
+      expect(enabled.status).toBe(200);
+      expect(enabled.body.resetToken).toBeTruthy();
+      expect(enabled.body.message).toBe(disabled.body.message);
+
+      process.env.NODE_ENV = 'production';
+      const production = await request(app).post('/api/auth/forgot-password').send({ email: 'user@test.com' });
+      expect(production.status).toBe(200);
+      expect(production.body.resetToken).toBeUndefined();
+      expect(production.body.message).toBe(disabled.body.message);
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalExposeResetToken === undefined) delete process.env.EXPOSE_RESET_TOKEN;
+      else process.env.EXPOSE_RESET_TOKEN = originalExposeResetToken;
+      warn.mockRestore();
+    }
   });
 
   it('reset-password mật khẩu ngắn trả 400', async () => {

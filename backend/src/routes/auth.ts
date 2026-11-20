@@ -142,8 +142,12 @@ router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), asy
   console.log(`[PasswordReset] Link đặt lại mật khẩu cho ${email}: ${resetLink}`);
 
   const payload: { message: string; resetToken?: string } = { message: genericMessage };
-  if (process.env.NODE_ENV !== 'production') {
-    payload.resetToken = token;
+  if (process.env.EXPOSE_RESET_TOKEN === 'true') {
+    if (process.env.NODE_ENV === 'production') {
+      console.warn('[PasswordReset] Bỏ qua EXPOSE_RESET_TOKEN=true trong môi trường production.');
+    } else {
+      payload.resetToken = token;
+    }
   }
   res.json(payload);
 });
