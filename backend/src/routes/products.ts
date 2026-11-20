@@ -6,6 +6,8 @@ import multer from 'multer';
 import { prisma } from '../prisma.js';
 import { mapProduct } from '../utils/map.js';
 import { adminRequired } from '../middleware/auth.js';
+import { z } from 'zod';
+import { validate } from '../utils/validate.js';
 
 const router = Router();
 
@@ -33,6 +35,67 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+const productBaseSchema = {
+  name: z
+    .string({ error: 'Tên sản phẩm không được để trống' })
+    .trim()
+    .min(1, 'Tên sản phẩm không được để trống')
+    .max(200, 'Tên sản phẩm tối đa 200 ký tự'),
+  categoryId: z
+    .string({ error: 'Danh mục không hợp lệ' })
+    .min(1, 'Danh mục không được để trống'),
+  brand: z.string({ error: 'Thương hiệu không hợp lệ' }).default(''),
+  price: z.coerce
+    .number({ error: 'Giá không hợp lệ' })
+    .int('Giá phải là số nguyên')
+    .min(0, 'Giá không được âm'),
+  salePrice: z
+    .union([
+      z.null(),
+      z.literal(''),
+      z.coerce.number().int('Giá KM phải là số nguyên').min(0, 'Giá KM không được âm'),
+    ])
+    .optional()
+    .transform((value) => (value === '' || value === undefined ? null : value)),
+  stock: z.coerce
+    .number({ error: 'Tồn kho không hợp lệ' })
+    .int('Tồn kho phải là số nguyên')
+    .min(0, 'Tồn kho không được âm'),
+  description: z.string().default(''),
+  specs: z.record(z.string(), z.string()).optional().default({ 'Bảo hành': '12 tháng' }),
+  images: z.array(z.string()).optional().default(['/images/products/placeholder.jpg']),
+  isFeatured: z.boolean().optional().default(false),
+  isBestSeller: z.boolean().optional().default(false),
+  status: z.enum(['active', 'inactive'], { error: 'Trạng thái phải là active hoặc inactive' }).optional().default('active'),
+};
+
+const createProductSchema = z
+  .object(productBaseSchema)
+  .refine((data) => data.salePrice == null || data.salePrice < data.price, {
+    message: 'Giá khuyến mãi phải nhỏ hơn giá gốc',
+    path: ['salePrice'],
+  });
+
+const updateProductSchema = z
+  .object({
+    name: productBaseSchema.name.optional(),
+    categoryId: productBaseSchema.categoryId.optional(),
+    brand: productBaseSchema.brand.optional(),
+    price: productBaseSchema.price.optional(),
+    salePrice: productBaseSchema.salePrice,
+    stock: productBaseSchema.stock.optional(),
+    description: productBaseSchema.description.optional(),
+    specs: productBaseSchema.specs.optional(),
+    images: productBaseSchema.images.optional(),
+    isFeatured: productBaseSchema.isFeatured.optional(),
+    isBestSeller: productBaseSchema.isBestSeller.optional(),
+    status: productBaseSchema.status.optional(),
+  })
+  .refine(
+    (data) => data.salePrice == null || data.price == null || data.salePrice < data.price,
+    { message: 'Giá khuyến mãi phải nhỏ hơn giá gốc', path: ['salePrice'] },
+  );
 
 router.get('/', async (req, res) => {
   const { q, category, brand, minPrice, maxPrice, sort, status } = req.query;
@@ -126,8 +189,13 @@ router.get('/:id', async (req, res) => {
   res.json({ ...mapProduct(p), categoryName: p.category.name });
 });
 
-router.post('/', adminRequired, async (req, res) => {
-  const body = req.body || {};
+router.post('/', adminRequired, validate(createProductSchema), async (req, res) => {
+  const body = req.body;
+  const category = await prisma.category.findUnique({ where: { id: body.categoryId } });
+  if (!category) {
+    return res.status(400).json({ message: 'Danh mục không tồn tại' });
+  }
+
   const slug =
     String(body.name || 'sp')
       .toLowerCase()
@@ -140,24 +208,31 @@ router.post('/', adminRequired, async (req, res) => {
       name: body.name,
       slug,
       categoryId: body.categoryId,
-      brand: body.brand || '',
-      price: Number(body.price) || 0,
-      salePrice: body.salePrice ? Number(body.salePrice) : null,
-      stock: Number(body.stock) || 0,
-      description: body.description || '',
-      specs: JSON.stringify(body.specs || { 'Bảo hành': '12 tháng' }),
-      images: JSON.stringify(body.images || ['/images/products/placeholder.jpg']),
-      isFeatured: !!body.isFeatured,
-      isBestSeller: !!body.isBestSeller,
-      status: body.status || 'active',
+      brand: body.brand,
+      price: body.price,
+      salePrice: body.salePrice,
+      stock: body.stock,
+      description: body.description,
+      specs: JSON.stringify(body.specs),
+      images: JSON.stringify(body.images),
+      isFeatured: body.isFeatured,
+      isBestSeller: body.isBestSeller,
+      status: body.status,
     },
     include: { category: true },
   });
   res.status(201).json({ ...mapProduct(p), categoryName: p.category.name });
 });
 
-router.put('/:id', adminRequired, async (req, res) => {
-  const body = req.body || {};
+router.put('/:id', adminRequired, validate(updateProductSchema), async (req, res) => {
+  const body = req.body;
+  if (body.categoryId !== undefined) {
+    const category = await prisma.category.findUnique({ where: { id: body.categoryId } });
+    if (!category) {
+      return res.status(400).json({ message: 'Danh mục không tồn tại' });
+    }
+  }
+
   try {
     const p = await prisma.product.update({
       where: { id: req.params.id },
@@ -165,16 +240,14 @@ router.put('/:id', adminRequired, async (req, res) => {
         ...(body.name !== undefined && { name: body.name }),
         ...(body.categoryId !== undefined && { categoryId: body.categoryId }),
         ...(body.brand !== undefined && { brand: body.brand }),
-        ...(body.price !== undefined && { price: Number(body.price) }),
-        ...(body.salePrice !== undefined && {
-          salePrice: body.salePrice === null || body.salePrice === '' ? null : Number(body.salePrice),
-        }),
-        ...(body.stock !== undefined && { stock: Number(body.stock) }),
+        ...(body.price !== undefined && { price: body.price }),
+        ...(body.salePrice !== undefined && { salePrice: body.salePrice }),
+        ...(body.stock !== undefined && { stock: body.stock }),
         ...(body.description !== undefined && { description: body.description }),
         ...(body.specs !== undefined && { specs: JSON.stringify(body.specs) }),
         ...(body.images !== undefined && { images: JSON.stringify(body.images) }),
-        ...(body.isFeatured !== undefined && { isFeatured: !!body.isFeatured }),
-        ...(body.isBestSeller !== undefined && { isBestSeller: !!body.isBestSeller }),
+        ...(body.isFeatured !== undefined && { isFeatured: body.isFeatured }),
+        ...(body.isBestSeller !== undefined && { isBestSeller: body.isBestSeller }),
         ...(body.status !== undefined && { status: body.status }),
       },
       include: { category: true },

@@ -93,6 +93,68 @@ describe('TechStore API', () => {
     expect(response.body.message).toMatch(/email/i);
   });
 
+  it('admin tạo sản phẩm với salePrice null và giá trị mặc định', async () => {
+    const category = await prisma.category.findFirstOrThrow();
+    const response = await request(app)
+      .post('/api/products')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Sản phẩm kiểm thử',
+        categoryId: category.id,
+        price: 100_000,
+        salePrice: null,
+        stock: 0,
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.salePrice).toBeNull();
+    expect(response.body.specs).toEqual({ 'Bảo hành': '12 tháng' });
+    expect(response.body.images).toEqual(['/images/products/placeholder.jpg']);
+  });
+
+  it('API sản phẩm từ chối dữ liệu không hợp lệ và danh mục không tồn tại', async () => {
+    const category = await prisma.category.findFirstOrThrow();
+    const invalidProduct = await request(app)
+      .post('/api/products')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: ' ',
+        categoryId: category.id,
+        price: 100_000,
+        salePrice: 100_000,
+        stock: 0,
+      });
+    expect(invalidProduct.status).toBe(400);
+
+    const missingCategory = await request(app)
+      .post('/api/products')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Sản phẩm kiểm thử',
+        categoryId: 'missing-category',
+        price: 100_000,
+        salePrice: null,
+        stock: 0,
+      });
+    expect(missingCategory.status).toBe(400);
+    expect(missingCategory.body.message).toMatch(/danh mục không tồn tại/i);
+  });
+
+  it('admin cập nhật sản phẩm với salePrice null và từ chối giá khuyến mãi không hợp lệ', async () => {
+    const clearSalePrice = await request(app)
+      .put(`/api/products/${productId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ salePrice: null });
+    expect(clearSalePrice.status).toBe(200);
+    expect(clearSalePrice.body.salePrice).toBeNull();
+
+    const invalidPrice = await request(app)
+      .put(`/api/products/${productId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ price: 800_000, salePrice: 900_000 });
+    expect(invalidPrice.status).toBe(400);
+  });
+
   it('forgot-password thiếu email trả 400', async () => {
     const response = await request(app).post('/api/auth/forgot-password').send({});
     expect(response.status).toBe(400);
