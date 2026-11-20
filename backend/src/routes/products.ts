@@ -139,20 +139,36 @@ router.get('/', async (req, res) => {
 });
 
 router.get('/featured', async (_req, res) => {
-  const list = await prisma.product.findMany({
+  let list = await prisma.product.findMany({
     where: { isFeatured: true, status: 'active' },
     include: { category: true },
     take: 12,
   });
+  if (list.length === 0) {
+    list = await prisma.product.findMany({
+      where: { status: 'active' },
+      include: { category: true },
+      orderBy: { createdAt: 'desc' },
+      take: 12,
+    });
+  }
   res.json(list.map((p) => ({ ...mapProduct(p), categoryName: p.category.name })));
 });
 
 router.get('/best-sellers', async (_req, res) => {
-  const list = await prisma.product.findMany({
+  let list = await prisma.product.findMany({
     where: { isBestSeller: true, status: 'active' },
     include: { category: true },
     take: 12,
   });
+  if (list.length === 0) {
+    list = await prisma.product.findMany({
+      where: { status: 'active' },
+      include: { category: true },
+      orderBy: [{ rating: 'desc' }, { createdAt: 'desc' }],
+      take: 12,
+    });
+  }
   res.json(list.map((p) => ({ ...mapProduct(p), categoryName: p.category.name })));
 });
 

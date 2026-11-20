@@ -122,16 +122,106 @@ async function seedReviews() {
   }
 }
 
+async function seedMissingDevelopmentData() {
+  const passwordAdmin = await bcrypt.hash('admin123', 10);
+  const passwordUser = await bcrypt.hash('123456', 10);
+
+  await prisma.user.upsert({
+    where: { email: 'admin@gmail.com' },
+    update: {},
+    create: {
+      email: 'admin@gmail.com',
+      password: passwordAdmin,
+      fullName: 'Quản trị viên',
+      phone: '0901234567',
+      address: '123 Nguyễn Huệ',
+      city: 'Hồ Chí Minh',
+      district: 'Quận 1',
+      role: 'ADMIN',
+    },
+  });
+  await prisma.user.upsert({
+    where: { email: 'user@gmail.com' },
+    update: {},
+    create: {
+      email: 'user@gmail.com',
+      password: passwordUser,
+      fullName: 'Nguyễn Văn A',
+      phone: '0912345678',
+      address: '456 Lê Lợi',
+      city: 'Hà Nội',
+      district: 'Hoàn Kiếm',
+      role: 'USER',
+    },
+  });
+
+  const catMap: Record<string, string> = {};
+  for (const category of categories) {
+    const saved = await prisma.category.upsert({
+      where: { slug: category.slug },
+      update: {},
+      create: category,
+    });
+    catMap[category.slug] = saved.id;
+  }
+
+  for (const item of productsSeed) {
+    const slug = `${item.name.toLowerCase().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}-${item.img.replace('.jpg', '')}`;
+    const existing = await prisma.product.findUnique({ where: { slug } });
+    const images = JSON.stringify([`/images/products/${item.img}`]);
+    if (existing) {
+      let existingImages: unknown;
+      try {
+        existingImages = JSON.parse(existing.images);
+      } catch {
+        existingImages = null;
+      }
+      if (!Array.isArray(existingImages) || existingImages.length === 0) {
+        await prisma.product.update({ where: { id: existing.id }, data: { images } });
+      }
+      continue;
+    }
+
+    await prisma.product.create({
+      data: {
+        name: item.name,
+        slug,
+        categoryId: catMap[item.cat],
+        brand: item.brand,
+        price: item.price,
+        salePrice: item.sale,
+        stock: 10 + Math.floor(Math.random() * 40),
+        rating: Number((4 + Math.random()).toFixed(1)),
+        reviewCount: 50 + Math.floor(Math.random() * 400),
+        description: `${item.name} là sản phẩm công nghệ cao cấp. Thiết kế hiện đại, hiệu năng mạnh mẽ.`,
+        specs: JSON.stringify({
+          'Thương hiệu': item.brand,
+          'Bảo hành': '12 tháng',
+          'Xuất xứ': 'Chính hãng',
+          'Tình trạng': 'Mới 100%',
+        }),
+        images,
+        isFeatured: item.featured,
+        isBestSeller: item.best,
+        status: 'active',
+      },
+    });
+  }
+}
+
 async function main() {
   const force = process.argv.includes('--force');
 
   if (!force) {
     const existingUsers = await prisma.user.count();
     if (existingUsers > 0) {
+      if (process.env.NODE_ENV !== 'production') {
+        await seedMissingDevelopmentData();
+      }
       await seedCoupons();
       await seedReviews();
       console.log(
-        `Database đã có ${existingUsers} user — bỏ qua seed dữ liệu mẫu, chỉ bổ sung coupon và review mẫu còn thiếu. Dùng npm run db:seed:force nếu muốn xóa và seed lại.`
+        `Database đã có ${existingUsers} user — giữ nguyên dữ liệu hiện có và chỉ bổ sung dữ liệu mẫu còn thiếu. Dùng npm run db:seed:force nếu muốn xóa và seed lại.`
       );
       return;
     }

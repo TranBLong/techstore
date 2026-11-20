@@ -58,8 +58,9 @@ export default function ProductCard({ product }: Props) {
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           loading="lazy"
           onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = 'https://placehold.co/400x400/e2e8f0/64748b?text=' + encodeURIComponent(product.name.slice(0, 20));
+            if (!e.currentTarget.src.includes('/placeholder.svg')) {
+              e.currentTarget.src = mediaUrl('');
+            }
           }}
         />
         {discount > 0 && (

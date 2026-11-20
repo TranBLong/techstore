@@ -69,6 +69,15 @@ describe('TechStore API', () => {
     expect(response.body.token).toBeTruthy();
   });
 
+  it('đăng nhập được khi email có khoảng trắng thừa', async () => {
+    const response = await request(app).post('/api/auth/login').send({
+      email: ' user@test.com ',
+      password: 'test1234',
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.user.email).toBe('user@test.com');
+  });
+
   it('liệt kê thương hiệu duy nhất của sản phẩm active và lọc theo danh mục', async () => {
     const category = await prisma.category.findFirstOrThrow();
     const otherCategory = await prisma.category.create({

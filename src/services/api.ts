@@ -27,7 +27,7 @@ export async function api<T = unknown>(
 }
 
 export function mediaUrl(path: string): string {
-  if (!path) return '/images/products/placeholder.jpg';
+  if (!path || path.endsWith('/placeholder.jpg')) return '/images/products/placeholder.svg';
   if (path.startsWith('http')) return path;
   const base = (import.meta.env.VITE_API_URL || 'http://localhost:4000/api').replace(/\/api$/, '');
   return `${base}${path.startsWith('/') ? path : `/${path}`}`;

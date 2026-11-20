@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma.js';
 import { authRequired, signToken } from '../middleware/auth.js';
 import { validate } from '../utils/validate.js';
+import { getFrontendOrigins } from '../utils/config.js';
 
 const router = Router();
 
@@ -20,12 +21,12 @@ const authLimiter = rateLimit({
 });
 
 const loginSchema = z.object({
-  email: z.string({ error: 'Email không hợp lệ' }).email('Email không hợp lệ'),
+  email: z.string({ error: 'Email không hợp lệ' }).trim().email('Email không hợp lệ'),
   password: z.string({ error: 'Vui lòng nhập mật khẩu' }).min(1, 'Vui lòng nhập mật khẩu'),
 });
 
 const registerSchema = z.object({
-  email: z.string({ error: 'Email không hợp lệ' }).email('Email không hợp lệ'),
+  email: z.string({ error: 'Email không hợp lệ' }).trim().email('Email không hợp lệ'),
   password: z.string({ error: 'Mật khẩu phải có ít nhất 6 ký tự' }).min(6, 'Mật khẩu phải có ít nhất 6 ký tự'),
   fullName: z.string({ error: 'Họ tên không được để trống' }).min(1, 'Họ tên không được để trống'),
   phone: z.string().optional(),
@@ -55,7 +56,7 @@ const resetPasswordSchema = z.object({
 
 router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
   const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email: String(email).toLowerCase() } });
+  const user = await prisma.user.findUnique({ where: { email: String(email).trim().toLowerCase() } });
   if (!user) return res.status(401).json({ message: 'Email hoặc mật khẩu không đúng' });
   if (!user.isActive) return res.status(403).json({ message: 'Tài khoản đã bị khóa' });
   const ok = await bcrypt.compare(password, user.password);
@@ -67,12 +68,13 @@ router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
 
 router.post('/register', authLimiter, validate(registerSchema), async (req, res) => {
   const { email, password, fullName, phone } = req.body;
-  const exists = await prisma.user.findUnique({ where: { email: String(email).toLowerCase() } });
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const exists = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (exists) return res.status(400).json({ message: 'Email đã được sử dụng' });
   const hash = await bcrypt.hash(password, 10);
   const user = await prisma.user.create({
     data: {
-      email: String(email).toLowerCase(),
+      email: normalizedEmail,
       password: hash,
       fullName,
       phone: phone || '',
@@ -137,7 +139,7 @@ router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), asy
     data: { userId: user.id, tokenHash, expiresAt },
   });
 
-  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const frontendUrl = getFrontendOrigins()[0];
   const resetLink = `${frontendUrl}/dat-lai-mat-khau?token=${token}`;
   console.log(`[PasswordReset] Link đặt lại mật khẩu cho ${email}: ${resetLink}`);
 

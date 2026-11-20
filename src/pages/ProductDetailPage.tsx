@@ -77,7 +77,7 @@ export default function ProductDetailPage() {
   }
 
   const price = product.salePrice ?? product.price;
-  const images = product.images?.length ? product.images : ['/images/products/placeholder.jpg'];
+  const images = product.images?.length ? product.images : ['/images/products/placeholder.svg'];
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
@@ -91,13 +91,31 @@ export default function ProductDetailPage() {
       <div className="grid md:grid-cols-2 gap-8 mb-12">
         <div>
           <div className="aspect-square bg-gray-50 rounded-xl overflow-hidden mb-3">
-            <img src={mediaUrl(images[activeImg])} alt={product.name} className="w-full h-full object-cover" />
+            <img
+              src={mediaUrl(images[activeImg])}
+              alt={product.name}
+              className="w-full h-full object-cover"
+              onError={(event) => {
+                if (!event.currentTarget.src.includes('/placeholder.svg')) {
+                  event.currentTarget.src = mediaUrl('');
+                }
+              }}
+            />
           </div>
           {images.length > 1 && (
             <div className="flex gap-2">
               {images.map((img, i) => (
                 <button key={i} onClick={() => setActiveImg(i)} className={`w-16 h-16 rounded-lg overflow-hidden border-2 ${activeImg === i ? 'border-blue-600' : 'border-transparent'}`}>
-                  <img src={mediaUrl(img)} alt="" className="w-full h-full object-cover" />
+                  <img
+                    src={mediaUrl(img)}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={(event) => {
+                      if (!event.currentTarget.src.includes('/placeholder.svg')) {
+                        event.currentTarget.src = mediaUrl('');
+                      }
+                    }}
+                  />
                 </button>
               ))}
             </div>
