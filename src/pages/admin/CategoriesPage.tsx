@@ -4,6 +4,9 @@ import { productService } from '../../services/productService';
 import { useToast } from '../../contexts/ToastContext';
 import type { Category } from '../../types';
 import Loading from '../../components/common/Loading';
+import Pagination from '../../components/common/Pagination';
+
+const PER_PAGE = 12;
 
 export default function AdminCategoriesPage() {
   const { showToast } = useToast();
@@ -13,8 +16,17 @@ export default function AdminCategoriesPage() {
   const [editing, setEditing] = useState<Category | null>(null);
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(categories.length / PER_PAGE));
+  const visibleCategories = categories.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
-  const load = () => productService.getCategories().then(setCategories).catch(console.error).finally(() => setLoading(false));
+  const load = () => productService.getCategories()
+    .then((result) => {
+      setCategories(result);
+      setPage((current) => Math.min(current, Math.max(1, Math.ceil(result.length / PER_PAGE))));
+    })
+    .catch(console.error)
+    .finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
 
   const handleSave = async () => {
@@ -76,7 +88,7 @@ export default function AdminCategoriesPage() {
             </tr>
           </thead>
           <tbody>
-            {categories.map((c) => (
+            {visibleCategories.map((c) => (
               <tr key={c.id} className="border-b border-gray-50">
                 <td className="px-4 py-3 font-medium">{c.name}</td>
                 <td className="px-4 py-3 text-gray-500">{c.description}</td>
@@ -92,6 +104,7 @@ export default function AdminCategoriesPage() {
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

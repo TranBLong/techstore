@@ -5,6 +5,9 @@ import { useToast } from '../../contexts/ToastContext';
 import type { Coupon } from '../../types';
 import Loading from '../../components/common/Loading';
 import { formatCurrency, formatDate } from '../../utils/format';
+import Pagination from '../../components/common/Pagination';
+
+const PER_PAGE = 12;
 
 const emptyForm = {
   code: '',
@@ -24,11 +27,17 @@ export default function AdminCouponsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Coupon | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(coupons.length / PER_PAGE));
+  const visibleCoupons = coupons.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   const load = () =>
     couponService
       .getAll()
-      .then(setCoupons)
+      .then((result) => {
+        setCoupons(result);
+        setPage((current) => Math.min(current, Math.max(1, Math.ceil(result.length / PER_PAGE))));
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
 
@@ -231,7 +240,7 @@ export default function AdminCouponsPage() {
             </tr>
           </thead>
           <tbody>
-            {coupons.map((c) => (
+            {visibleCoupons.map((c) => (
               <tr key={c.id} className="border-b border-gray-50">
                 <td className="px-4 py-3 font-mono font-medium">{c.code}</td>
                 <td className="px-4 py-3">{c.type === 'percent' ? 'Phần trăm' : 'Cố định'}</td>
@@ -281,6 +290,7 @@ export default function AdminCouponsPage() {
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

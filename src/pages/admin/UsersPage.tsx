@@ -4,15 +4,26 @@ import { useToast } from '../../contexts/ToastContext';
 import { formatDate } from '../../utils/format';
 import type { User, Role } from '../../types';
 import Loading from '../../components/common/Loading';
+import Pagination from '../../components/common/Pagination';
+
+const PER_PAGE = 12;
 
 export default function AdminUsersPage() {
   const { showToast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(users.length / PER_PAGE));
+  const visibleUsers = users.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   useEffect(() => {
     userService.getAll().then(setUsers).catch(console.error).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
 
   const patch = async (id: string, data: Partial<User>) => {
     try {
@@ -41,7 +52,7 @@ export default function AdminUsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {visibleUsers.map((u) => (
               <tr key={u.id} className="border-b border-gray-50">
                 <td className="px-4 py-3 font-medium">{u.fullName}</td>
                 <td className="px-4 py-3">{u.email}</td>
@@ -62,6 +73,7 @@ export default function AdminUsersPage() {
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

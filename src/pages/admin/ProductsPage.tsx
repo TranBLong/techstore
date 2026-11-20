@@ -7,35 +7,55 @@ import { formatCurrency } from '../../utils/format';
 import { mediaUrl } from '../../services/api';
 import type { Product } from '../../types';
 import Loading from '../../components/common/Loading';
+import Pagination from '../../components/common/Pagination';
+
+const PER_PAGE = 12;
 
 export default function AdminProductsPage() {
   const { showToast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-
-  
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
     productService
-      .getAll({ status: 'all', page: '1', limit: '50' })
-      .then((result) => setProducts(result.items))
+      .getAll({
+        status: 'all',
+        page: String(page),
+        limit: String(PER_PAGE),
+        ...(search.trim() ? { q: search.trim() } : {}),
+      })
+      .then((result) => {
+        if (!active) return;
+        setProducts(result.items);
+        setTotal(result.total);
+        setTotalPages(result.totalPages);
+      })
       .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
-  const filtered = products.filter(
-    (p) =>
-      !search ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.brand.toLowerCase().includes(search.toLowerCase())
-  );
+    return () => {
+      active = false;
+    };
+  }, [page, search]);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Xóa sản phẩm này?')) return;
     try {
       await productService.delete(id);
       setProducts((prev) => prev.filter((p) => p.id !== id));
+      const nextTotal = total - 1;
+      const nextTotalPages = Math.max(1, Math.ceil(nextTotal / PER_PAGE));
+      setTotal(nextTotal);
+      setTotalPages(nextTotalPages);
+      setPage((current) => Math.min(current, nextTotalPages));
       showToast('Đã xóa sản phẩm', 'success');
     } catch (e: any) {
       showToast(e.message || 'Lỗi', 'error');
@@ -54,8 +74,9 @@ export default function AdminProductsPage() {
       </div>
       <div className="relative max-w-sm">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm sản phẩm..." className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm" />
+        <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Tìm sản phẩm..." className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm" />
       </div>
+      <p className="text-sm text-gray-500">{total} sản phẩm</p>
       <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -68,7 +89,7 @@ export default function AdminProductsPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => (
+            {products.map((p) => (
               <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -94,9 +115,17 @@ export default function AdminProductsPage() {
                 </td>
               </tr>
             ))}
+            {products.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                  {search ? 'Không tìm thấy sản phẩm' : 'Chưa có sản phẩm'}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }
