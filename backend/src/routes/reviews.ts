@@ -115,9 +115,76 @@ router.post('/products/:id/reviews', authRequired, async (req, res) => {
       comment: review.comment,
       createdAt: review.createdAt,
     });
-  } catch {
-    res.status(400).json({ message: 'Không thể tạo đánh giá' });
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+      return res.status(400).json({ message: 'Bạn đã đánh giá sản phẩm này rồi' });
+    }
+    throw error;
   }
+});
+
+router.get('/reviews/my', authRequired, async (req, res) => {
+  const reviews = await prisma.review.findMany({
+    where: { userId: req.user!.userId },
+    orderBy: { createdAt: 'desc' },
+    include: { user: { select: { id: true, fullName: true } } },
+  });
+  res.json(reviews.map((review) => ({
+    id: review.id,
+    productId: review.productId,
+    userId: review.userId,
+    userName: review.user.fullName,
+    rating: review.rating,
+    comment: review.comment,
+    createdAt: review.createdAt,
+  })));
+});
+
+router.patch('/reviews/:id', authRequired, async (req, res) => {
+  const rating = Number(req.body?.rating);
+  const comment = String(req.body?.comment ?? '').trim();
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: 'Điểm đánh giá phải từ 1 đến 5' });
+  }
+  if (comment.length > 2000) {
+    return res.status(400).json({ message: 'Nội dung đánh giá tối đa 2000 ký tự' });
+  }
+  const id = String(req.params.id);
+  const existing = await prisma.review.findUnique({ where: { id } });
+  if (!existing) return res.status(404).json({ message: 'Không tìm thấy đánh giá' });
+  if (existing.userId !== req.user!.userId && req.user!.role !== 'ADMIN') {
+    return res.status(403).json({ message: 'Bạn chỉ có thể sửa đánh giá của mình' });
+  }
+
+  const review = await prisma.$transaction(async (tx) => {
+    const updated = await tx.review.update({
+      where: { id },
+      data: { rating, comment },
+      include: { user: { select: { id: true, fullName: true } } },
+    });
+    const aggregate = await tx.review.aggregate({
+      where: { productId: updated.productId },
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+    await tx.product.update({
+      where: { id: updated.productId },
+      data: {
+        rating: Number((aggregate._avg.rating ?? rating).toFixed(1)),
+        reviewCount: aggregate._count._all,
+      },
+    });
+    return updated;
+  });
+  res.json({
+    id: review.id,
+    productId: review.productId,
+    userId: review.userId,
+    userName: review.user.fullName,
+    rating: review.rating,
+    comment: review.comment,
+    createdAt: review.createdAt,
+  });
 });
 
 router.get('/reviews', adminRequired, async (req, res) => {
@@ -171,31 +238,29 @@ router.get('/reviews', adminRequired, async (req, res) => {
   });
 });
 
-router.delete('/reviews/:id', adminRequired, async (req, res) => {
+router.delete('/reviews/:id', authRequired, async (req, res) => {
   const id = String(req.params.id);
-  try {
-    await prisma.$transaction(async (tx) => {
-      const review = await tx.review.findUnique({ where: { id } });
-      if (!review) throw new Error('notfound');
-      await tx.review.delete({ where: { id } });
-
-      const aggregate = await tx.review.aggregate({
-        where: { productId: review.productId },
-        _avg: { rating: true },
-        _count: { _all: true },
-      });
-      await tx.product.update({
-        where: { id: review.productId },
-        data: {
-          rating: aggregate._count._all === 0 ? 0 : Number((aggregate._avg.rating ?? 0).toFixed(1)),
-          reviewCount: aggregate._count._all,
-        },
-      });
-    });
-    res.json({ message: 'Đã xóa đánh giá' });
-  } catch {
-    res.status(404).json({ message: 'Không tìm thấy đánh giá' });
+  const review = await prisma.review.findUnique({ where: { id } });
+  if (!review) return res.status(404).json({ message: 'Không tìm thấy đánh giá' });
+  if (review.userId !== req.user!.userId && req.user!.role !== 'ADMIN') {
+    return res.status(403).json({ message: 'Bạn chỉ có thể xóa đánh giá của mình' });
   }
+  await prisma.$transaction(async (tx) => {
+    await tx.review.delete({ where: { id } });
+    const aggregate = await tx.review.aggregate({
+      where: { productId: review.productId },
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+    await tx.product.update({
+      where: { id: review.productId },
+      data: {
+        rating: aggregate._count._all === 0 ? 0 : Number((aggregate._avg.rating ?? 0).toFixed(1)),
+        reviewCount: aggregate._count._all,
+      },
+    });
+  });
+  res.json({ message: 'Đã xóa đánh giá' });
 });
 
 export default router;

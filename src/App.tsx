@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { WishlistProvider } from './contexts/WishlistContext';
+import { CompareProvider } from './contexts/CompareContext';
 import MainLayout from './layouts/MainLayout';
 import AdminLayout from './layouts/AdminLayout';
 import { ProtectedRoute, AdminRoute } from './routes/ProtectedRoute';
@@ -25,6 +26,8 @@ import NotFoundPage from './pages/NotFoundPage';
 import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
 import PolicyPage from './pages/PolicyPage';
+import ComparePage from './pages/ComparePage';
+import PaymentReturnPage from './pages/PaymentReturnPage';
 
 import DashboardPage from './pages/admin/DashboardPage';
 import AdminProductsPage from './pages/admin/ProductsPage';
@@ -43,13 +46,16 @@ export default function App() {
         <CartProvider>
           <ToastProvider>
             <WishlistProvider>
+            <CompareProvider>
             <Routes>
               <Route element={<MainLayout />}>
                 <Route index element={<HomePage />} />
                 <Route path="san-pham" element={<ProductsPage />} />
                 <Route path="san-pham/:id" element={<ProductDetailPage />} />
+                <Route path="so-sanh" element={<ComparePage />} />
                 <Route path="gio-hang" element={<CartPage />} />
                 <Route path="thanh-toan" element={<CheckoutPage />} />
+                <Route path="thanh-toan/ket-qua" element={<PaymentReturnPage />} />
                 <Route path="dang-nhap" element={<LoginPage />} />
                 <Route path="dang-ky" element={<RegisterPage />} />
                 <Route path="quen-mat-khau" element={<ForgotPasswordPage />} />
@@ -79,6 +85,7 @@ export default function App() {
                 <Route path="lien-he" element={<AdminContactsPage />} />
               </Route>
             </Routes>
+            </CompareProvider>
             </WishlistProvider>
           </ToastProvider>
         </CartProvider>

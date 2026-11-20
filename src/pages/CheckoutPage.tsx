@@ -9,6 +9,9 @@ import { formatCurrency } from '../utils/format';
 import EmptyState from '../components/common/EmptyState';
 import { mediaUrl } from '../services/api';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { paymentService } from '../services/paymentService';
+import { addressService } from '../services/addressService';
+import type { Address } from '../types';
 
 export default function CheckoutPage() {
   usePageTitle('Thanh toán');
@@ -64,10 +67,33 @@ export default function CheckoutPage() {
     city: user?.city || '',
     district: user?.district || '',
     note: '',
-    paymentMethod: 'cod' as 'cod' | 'transfer',
+    paymentMethod: 'cod' as 'cod' | 'transfer' | 'vnpay' | 'momo',
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState('');
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    addressService.list().then((addresses) => {
+      setSavedAddresses(addresses);
+      const defaultAddress = addresses.find((address) => address.isDefault);
+      if (defaultAddress) {
+        setSelectedAddressId(defaultAddress.id);
+        setForm((current) => ({
+          ...current,
+          fullName: defaultAddress.fullName,
+          phone: defaultAddress.phone,
+          address: defaultAddress.address,
+          district: defaultAddress.district,
+          city: defaultAddress.city,
+        }));
+      }
+    }).catch((error: unknown) => {
+      showToast(error instanceof Error ? error.message : 'Không tải được sổ địa chỉ', 'error');
+    });
+  }, [isAuthenticated, showToast]);
 
   if (items.length === 0) {
     return (
@@ -148,8 +174,10 @@ export default function CheckoutPage() {
           productId: i.productId,
           productName: i.product.name,
           productImage: i.product.images?.[0] || '',
-          price: i.product.salePrice ?? i.product.price,
+          price: i.variant?.price ?? i.product.salePrice ?? i.product.price,
           quantity: i.quantity,
+          variantId: i.variantId,
+          variantName: i.variant ? [i.variant.color, i.variant.configuration].filter(Boolean).join(' · ') : undefined,
         })),
         subtotal,
         discount,
@@ -168,7 +196,25 @@ export default function CheckoutPage() {
         couponCode: appliedCode || undefined,
       });
       clearCart();
-      showToast('Đặt hàng thành công!', 'success');
+      if (order.emailSent === false) {
+        showToast('Đơn đã được tạo; email xác nhận chưa gửi được (cần cấu hình SMTP).', 'info');
+      }
+      if (form.paymentMethod === 'vnpay' || form.paymentMethod === 'momo') {
+        try {
+          const payment = await paymentService.createPayment(order.id, form.paymentMethod);
+          window.location.assign(payment.payUrl);
+          return;
+        } catch (paymentError: unknown) {
+          showToast(
+            paymentError instanceof Error
+              ? `Đơn đã được tạo nhưng chưa mở được cổng thanh toán: ${paymentError.message}`
+              : 'Đơn đã được tạo nhưng chưa mở được cổng thanh toán',
+            'error',
+          );
+        }
+      } else {
+        showToast('Đặt hàng thành công!', 'success');
+      }
       navigate(`/dat-hang-thanh-cong/${order.id}`);
     } catch (err: any) {
       showToast(err.message || 'Đặt hàng thất bại', 'error');
@@ -177,9 +223,15 @@ export default function CheckoutPage() {
     }
   };
 
-  const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
+  const set = (key: string, value: string) => {
+    if (['fullName', 'phone', 'address', 'city', 'district'].includes(key)) {
+      setSelectedAddressId('');
+    }
+    setForm((f) => ({ ...f, [key]: value }));
+  };
   const hasUnavailableItems = items.some(
-    (item) => item.product.status !== 'active' || item.quantity > item.product.stock,
+    (item) => item.product.status !== 'active'
+      || (item.variantId ? !item.variant || !item.variant.isActive || item.quantity > item.variant.stock : item.quantity > item.product.stock),
   );
 
   return (
@@ -189,6 +241,26 @@ export default function CheckoutPage() {
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-xl border border-gray-100 p-5">
             <h3 className="font-semibold mb-4">Thông tin giao hàng</h3>
+            {savedAddresses.length > 0 && (
+              <label className="block text-sm mb-4">
+                Chọn địa chỉ đã lưu
+                <select value={selectedAddressId} onChange={(event) => {
+                  const address = savedAddresses.find((entry) => entry.id === event.target.value);
+                  setSelectedAddressId(address?.id || '');
+                  if (address) setForm((current) => ({
+                      ...current,
+                      fullName: address.fullName,
+                      phone: address.phone,
+                      address: address.address,
+                      district: address.district,
+                      city: address.city,
+                    }));
+                }} className="mt-1 w-full px-3 py-2.5 border border-gray-200 rounded-lg">
+                  <option value="">Nhập địa chỉ khác</option>
+                  {savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.label} · {address.address}, {address.city}{address.isDefault ? ' (mặc định)' : ''}</option>)}
+                </select>
+              </label>
+            )}
             <div className="grid sm:grid-cols-2 gap-4">
               {[
                 { key: 'fullName', label: 'Họ và tên' },
@@ -216,6 +288,8 @@ export default function CheckoutPage() {
               {[
                 { value: 'cod', label: 'Thanh toán khi nhận hàng (COD)' },
                 { value: 'transfer', label: 'Chuyển khoản ngân hàng' },
+                { value: 'vnpay', label: 'Thanh toán trực tuyến VNPay' },
+                { value: 'momo', label: 'Ví điện tử MoMo' },
               ].map((opt) => (
                 <label key={opt.value} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                   <input type="radio" name="payment" value={opt.value} checked={form.paymentMethod === opt.value} onChange={() => set('paymentMethod', opt.value)} />
@@ -230,13 +304,14 @@ export default function CheckoutPage() {
             <h3 className="font-semibold mb-4">Đơn hàng ({items.length})</h3>
             <div className="space-y-3 max-h-60 overflow-y-auto mb-4">
               {items.map((i) => (
-                <div key={i.productId} className="flex gap-3 text-sm">
+                <div key={`${i.productId}:${i.variantId || ''}`} className="flex gap-3 text-sm">
                   <img src={mediaUrl(i.product.images?.[0] || '')} alt="" className="w-12 h-12 rounded object-cover" />
                   <div className="flex-1 min-w-0">
                     <p className="line-clamp-1 font-medium">{i.product.name}</p>
+                    {i.variant && <p className="text-xs text-gray-500">{[i.variant.color, i.variant.configuration].filter(Boolean).join(' · ')}</p>}
                     <p className="text-gray-500">x{i.quantity}</p>
                   </div>
-                  <span className="font-medium">{formatCurrency((i.product.salePrice ?? i.product.price) * i.quantity)}</span>
+                  <span className="font-medium">{formatCurrency((i.variant?.price ?? i.product.salePrice ?? i.product.price) * i.quantity)}</span>
                 </div>
               ))}
             </div>

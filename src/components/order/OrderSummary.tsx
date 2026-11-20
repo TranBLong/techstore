@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, CreditCard } from 'lucide-react';
 import type { Order } from '../../types';
 import {
   formatCurrency,
@@ -10,14 +10,18 @@ import {
 } from '../../utils/format';
 import { BANK_TRANSFER_INFO } from '../../utils/bank';
 import { mediaUrl } from '../../services/api';
+import { paymentService } from '../../services/paymentService';
+import { useToast } from '../../contexts/ToastContext';
 
 interface OrderSummaryProps {
   order: Order;
 }
 
 export default function OrderSummary({ order }: OrderSummaryProps) {
+  const { showToast } = useToast();
   const [copied, setCopied] = useState<'account' | 'content' | null>(null);
   const [copyError, setCopyError] = useState('');
+  const [paying, setPaying] = useState(false);
 
   const copyText = async (text: string, key: 'account' | 'content') => {
     setCopyError('');
@@ -34,6 +38,7 @@ export default function OrderSummary({ order }: OrderSummaryProps) {
   const transferContent = formatOrderCode(order.id);
   const showTransferGuide =
     order.paymentMethod === 'transfer' && order.status !== 'cancelled';
+  const payOnline = order.paymentMethod === 'vnpay' || order.paymentMethod === 'momo';
 
   return (
     <div className="space-y-4">
@@ -64,6 +69,7 @@ export default function OrderSummary({ order }: OrderSummaryProps) {
               />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium line-clamp-2">{item.productName}</p>
+                {item.variantName && <p className="text-xs text-gray-500">{item.variantName}</p>}
                 <p className="text-xs text-gray-500">x{item.quantity}</p>
               </div>
               <span className="text-sm font-medium shrink-0">
@@ -94,9 +100,38 @@ export default function OrderSummary({ order }: OrderSummaryProps) {
         )}
         <p className="pt-1">
           <span className="text-gray-500">Thanh toán:</span>{' '}
-          {order.paymentMethod === 'cod' ? 'COD (tiền mặt khi nhận)' : 'Chuyển khoản ngân hàng'}
+          {{
+            cod: 'COD (tiền mặt khi nhận)',
+            transfer: 'Chuyển khoản ngân hàng',
+            vnpay: 'VNPay',
+            momo: 'MoMo',
+          }[order.paymentMethod]}
         </p>
       </div>
+
+      {payOnline && order.paymentStatus !== 'paid' && order.status !== 'cancelled' && (
+        <div className="bg-indigo-50 rounded-xl border border-indigo-100 p-5">
+          <p className="text-sm text-indigo-900 mb-3">Đơn hàng chưa thanh toán trực tuyến.</p>
+          <button type="button" disabled={paying} onClick={async () => {
+            setPaying(true);
+            try {
+              const { payUrl } = await paymentService.createPayment(order.id, order.paymentMethod as 'vnpay' | 'momo');
+              window.location.assign(payUrl);
+            } catch (error: unknown) {
+              showToast(error instanceof Error ? error.message : 'Không thể tạo liên kết thanh toán', 'error');
+              setPaying(false);
+            }
+          }} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-60">
+            <CreditCard size={16} /> {paying ? 'Đang chuyển...' : 'Thanh toán ngay'}
+          </button>
+        </div>
+      )}
+
+      {payOnline && (
+        <p className={`text-sm ${order.paymentStatus === 'paid' ? 'text-green-700' : 'text-amber-700'}`}>
+          Trạng thái thanh toán: {order.paymentStatus === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}
+        </p>
+      )}
 
       {showTransferGuide && (
         <div className="bg-blue-50 rounded-xl border border-blue-100 p-5 text-sm space-y-3">

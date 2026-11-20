@@ -5,6 +5,7 @@ import { formatDate } from '../../utils/format';
 import type { User, Role } from '../../types';
 import Loading from '../../components/common/Loading';
 import Pagination from '../../components/common/Pagination';
+import { UserPlus, Trash2 } from 'lucide-react';
 
 const PER_PAGE = 12;
 
@@ -16,6 +17,8 @@ export default function AdminUsersPage() {
   const [q, setQ] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | Role>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'active' | 'locked'>('ALL');
+  const [creating, setCreating] = useState(false);
+  const [newUser, setNewUser] = useState({ email: '', password: '', fullName: '', phone: '', role: 'USER' as Role });
 
   const filteredUsers = useMemo(() => {
     const keyword = q.trim().toLowerCase();
@@ -53,11 +56,54 @@ export default function AdminUsersPage() {
     }
   };
 
+  const create = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      const user = await userService.create(newUser);
+      setUsers((current) => [user, ...current]);
+      setNewUser({ email: '', password: '', fullName: '', phone: '', role: 'USER' });
+      setCreating(false);
+      showToast('Đã tạo người dùng', 'success');
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : 'Không thể tạo người dùng', 'error');
+    }
+  };
+
+  const remove = async (user: User) => {
+    if (!window.confirm(`Xóa người dùng ${user.email}? Tài khoản có đơn hàng sẽ không thể xóa.`)) return;
+    try {
+      await userService.remove(user.id);
+      setUsers((current) => current.filter((entry) => entry.id !== user.id));
+      showToast('Đã xóa người dùng', 'success');
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : 'Không thể xóa người dùng', 'error');
+    }
+  };
+
   if (loading) return <Loading />;
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Quản lý người dùng</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">Quản lý người dùng</h1>
+        <button type="button" onClick={() => setCreating((value) => !value)} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">
+          <UserPlus size={16} /> Tạo user
+        </button>
+      </div>
+      {creating && (
+        <form onSubmit={create} className="bg-white rounded-xl border p-4 grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <input required type="text" value={newUser.fullName} onChange={(event) => setNewUser({ ...newUser, fullName: event.target.value })} placeholder="Họ tên" className="border rounded-lg px-3 py-2 text-sm" />
+          <input required type="email" value={newUser.email} onChange={(event) => setNewUser({ ...newUser, email: event.target.value })} placeholder="Email" className="border rounded-lg px-3 py-2 text-sm" />
+          <input required minLength={6} type="password" value={newUser.password} onChange={(event) => setNewUser({ ...newUser, password: event.target.value })} placeholder="Mật khẩu (≥6 ký tự)" className="border rounded-lg px-3 py-2 text-sm" />
+          <input type="tel" value={newUser.phone} onChange={(event) => setNewUser({ ...newUser, phone: event.target.value })} placeholder="Số điện thoại" className="border rounded-lg px-3 py-2 text-sm" />
+          <div className="flex gap-2">
+            <select value={newUser.role} onChange={(event) => setNewUser({ ...newUser, role: event.target.value as Role })} className="min-w-0 flex-1 border rounded-lg px-2 py-2 text-sm">
+              <option value="USER">USER</option><option value="ADMIN">ADMIN</option>
+            </select>
+            <button className="px-3 bg-blue-600 text-white rounded-lg text-sm">Tạo</button>
+          </div>
+        </form>
+      )}
       <div className="flex flex-col sm:flex-row gap-3">
         <input
           type="search"
@@ -94,12 +140,13 @@ export default function AdminUsersPage() {
               <th className="px-4 py-3">Vai trò</th>
               <th className="px-4 py-3">Trạng thái</th>
               <th className="px-4 py-3">Ngày tạo</th>
+              <th className="px-4 py-3">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             {visibleUsers.length === 0 ? (
               <tr>
-                <td colSpan={5} className="p-8 text-center text-gray-500 text-sm">
+                <td colSpan={6} className="p-8 text-center text-gray-500 text-sm">
                   Không tìm thấy người dùng.
                 </td>
               </tr>
@@ -119,6 +166,11 @@ export default function AdminUsersPage() {
                   </button>
                 </td>
                 <td className="px-4 py-3 text-gray-500">{formatDate(u.createdAt)}</td>
+                <td className="px-4 py-3">
+                  <button type="button" onClick={() => void remove(u)} title="Xóa user" className="text-red-600 hover:text-red-800">
+                    <Trash2 size={16} />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

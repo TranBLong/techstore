@@ -32,6 +32,13 @@ export const reviewService = {
     });
   },
 
+  update(id: string, data: { rating: number; comment: string }) {
+    return api<Review>(`/reviews/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
   remove(id: string) {
     return api<{ message: string }>(`/reviews/${id}`, { method: 'DELETE' });
   },

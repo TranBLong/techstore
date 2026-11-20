@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Package, ShoppingBag, Users, DollarSign } from 'lucide-react';
+import { Package, ShoppingBag, Users, DollarSign, FileDown } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { statsService } from '../../services/userService';
 import { formatCurrency, formatDate, getOrderStatusLabel, getOrderStatusColor } from '../../utils/format';
@@ -13,6 +13,8 @@ const statusLabel: Record<string, string> = {
 
 export default function DashboardPage() {
   const [data, setData] = useState<any>(null);
+  const [reportError, setReportError] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
 
   useEffect(() => {
     statsService.dashboard().then(setData).catch(console.error);
@@ -29,9 +31,32 @@ export default function DashboardPage() {
 
   const pieData = (data.ordersByStatus || []).map((x: any) => ({ name: statusLabel[x.status] || x.status, value: x.count }));
 
+  const downloadReport = async (type: 'orders' | 'revenue') => {
+    setReportError('');
+    setReportLoading(true);
+    try {
+      await statsService.downloadReport(type);
+    } catch (error: unknown) {
+      setReportError(error instanceof Error ? error.message : 'Không tải được báo cáo');
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <div className="flex gap-2">
+          <button type="button" disabled={reportLoading} onClick={() => void downloadReport('orders')} className="inline-flex items-center gap-2 px-3 py-2 bg-white border rounded-lg text-sm disabled:opacity-60">
+            <FileDown size={16} /> Báo cáo đơn hàng
+          </button>
+          <button type="button" disabled={reportLoading} onClick={() => void downloadReport('revenue')} className="inline-flex items-center gap-2 px-3 py-2 bg-white border rounded-lg text-sm disabled:opacity-60">
+            <FileDown size={16} /> Doanh thu
+          </button>
+        </div>
+      </div>
+      {reportError && <p role="alert" className="text-sm text-red-600">{reportError}</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((s) => (
           <div key={s.label} className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4">

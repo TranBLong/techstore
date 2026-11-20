@@ -10,7 +10,7 @@ export async function restoreOrderStock(
   tx: Prisma.TransactionClient,
   order: OrderLike,
 ): Promise<void> {
-  let items: { productId?: string; quantity?: number }[] = [];
+  let items: { productId?: string; variantId?: string; quantity?: number }[] = [];
   try {
     items = JSON.parse(order.items || '[]');
   } catch {
@@ -21,6 +21,13 @@ export async function restoreOrderStock(
     const productId = String(item.productId || '');
     const quantity = Number(item.quantity) || 0;
     if (productId && quantity > 0) {
+      if (item.variantId) {
+        const restored = await tx.productVariant.updateMany({
+          where: { id: item.variantId, productId },
+          data: { stock: { increment: quantity } },
+        });
+        if (restored.count === 0) continue;
+      }
       await tx.product.update({
         where: { id: productId },
         data: { stock: { increment: quantity } },

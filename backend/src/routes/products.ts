@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
@@ -8,6 +9,7 @@ import { mapProduct } from '../utils/map.js';
 import { adminRequired } from '../middleware/auth.js';
 import { z } from 'zod';
 import { validate } from '../utils/validate.js';
+import { BusinessError } from '../utils/errors.js';
 
 const router = Router();
 
@@ -68,6 +70,17 @@ const productBaseSchema = {
   isFeatured: z.boolean().optional().default(false),
   isBestSeller: z.boolean().optional().default(false),
   status: z.enum(['active', 'inactive'], { error: 'Trạng thái phải là active hoặc inactive' }).optional().default('active'),
+  variants: z.array(z.object({
+    id: z.string().optional(),
+    color: z.string().trim().max(80).default(''),
+    configuration: z.string().trim().max(120).default(''),
+    sku: z.string().trim().min(1).max(100),
+    price: z.union([z.null(), z.coerce.number().int().min(0)]).optional().default(null),
+    stock: z.coerce.number().int().min(0),
+    isActive: z.boolean().optional().default(true),
+  })).max(100).refine((variants) => new Set(variants.map((variant) => variant.sku)).size === variants.length, {
+    message: 'SKU biến thể không được trùng nhau',
+  }).optional(),
 };
 
 const createProductSchema = z
@@ -91,6 +104,7 @@ const updateProductSchema = z
     isFeatured: productBaseSchema.isFeatured.optional(),
     isBestSeller: productBaseSchema.isBestSeller.optional(),
     status: productBaseSchema.status.optional(),
+    variants: productBaseSchema.variants,
   })
   .refine(
     (data) => data.salePrice == null || data.price == null || data.salePrice < data.price,
@@ -129,7 +143,7 @@ router.get('/', async (req, res) => {
 
   const [total, list] = await Promise.all([
     prisma.product.count({ where }),
-    prisma.product.findMany({ where, orderBy, skip, take: limit, include: { category: true } }),
+    prisma.product.findMany({ where, orderBy, skip, take: limit, include: { category: true, variants: true } }),
   ]);
   const items = list.map((p) => ({
     ...mapProduct(p),
@@ -141,13 +155,13 @@ router.get('/', async (req, res) => {
 router.get('/featured', async (_req, res) => {
   let list = await prisma.product.findMany({
     where: { isFeatured: true, status: 'active' },
-    include: { category: true },
+    include: { category: true, variants: true },
     take: 12,
   });
   if (list.length === 0) {
     list = await prisma.product.findMany({
       where: { status: 'active' },
-      include: { category: true },
+      include: { category: true, variants: true },
       orderBy: { createdAt: 'desc' },
       take: 12,
     });
@@ -158,13 +172,13 @@ router.get('/featured', async (_req, res) => {
 router.get('/best-sellers', async (_req, res) => {
   let list = await prisma.product.findMany({
     where: { isBestSeller: true, status: 'active' },
-    include: { category: true },
+    include: { category: true, variants: true },
     take: 12,
   });
   if (list.length === 0) {
     list = await prisma.product.findMany({
       where: { status: 'active' },
-      include: { category: true },
+      include: { category: true, variants: true },
       orderBy: [{ rating: 'desc' }, { createdAt: 'desc' }],
       take: 12,
     });
@@ -215,7 +229,7 @@ router.post('/upload', adminRequired, (req, res) => {
 router.get('/:id', async (req, res) => {
   const p = await prisma.product.findUnique({
     where: { id: req.params.id },
-    include: { category: true },
+    include: { category: true, variants: true },
   });
   if (!p) return res.status(404).json({ message: 'Không tìm thấy sản phẩm' });
   res.json({ ...mapProduct(p), categoryName: p.category.name });
@@ -243,15 +257,16 @@ router.post('/', adminRequired, validate(createProductSchema), async (req, res) 
       brand: body.brand,
       price: body.price,
       salePrice: body.salePrice,
-      stock: body.stock,
       description: body.description,
       specs: JSON.stringify(body.specs),
       images: JSON.stringify(body.images),
       isFeatured: body.isFeatured,
       isBestSeller: body.isBestSeller,
       status: body.status,
+      stock: body.variants?.length ? body.variants.reduce((total: number, variant: { stock: number }) => total + variant.stock, 0) : body.stock,
+      ...(body.variants ? { variants: { create: body.variants.map(({ id: _id, ...variant }: { id?: string; color: string; configuration: string; sku: string; price: number | null; stock: number; isActive: boolean }) => variant) } } : {}),
     },
-    include: { category: true },
+    include: { category: true, variants: true },
   });
   res.status(201).json({ ...mapProduct(p), categoryName: p.category.name });
 });
@@ -266,27 +281,60 @@ router.put('/:id', adminRequired, validate(updateProductSchema), async (req, res
   }
 
   try {
-    const p = await prisma.product.update({
-      where: { id: req.params.id },
-      data: {
+    const data = {
         ...(body.name !== undefined && { name: body.name }),
         ...(body.categoryId !== undefined && { categoryId: body.categoryId }),
         ...(body.brand !== undefined && { brand: body.brand }),
         ...(body.price !== undefined && { price: body.price }),
         ...(body.salePrice !== undefined && { salePrice: body.salePrice }),
-        ...(body.stock !== undefined && { stock: body.stock }),
+        ...(body.variants?.length
+          ? { stock: body.variants.reduce((total: number, variant: { stock: number }) => total + variant.stock, 0) }
+          : body.stock !== undefined && { stock: body.stock }),
         ...(body.description !== undefined && { description: body.description }),
         ...(body.specs !== undefined && { specs: JSON.stringify(body.specs) }),
         ...(body.images !== undefined && { images: JSON.stringify(body.images) }),
         ...(body.isFeatured !== undefined && { isFeatured: body.isFeatured }),
         ...(body.isBestSeller !== undefined && { isBestSeller: body.isBestSeller }),
         ...(body.status !== undefined && { status: body.status }),
-      },
-      include: { category: true },
+      };
+    const p = await prisma.$transaction(async (tx) => {
+      if (body.variants !== undefined) {
+        const keptIds = body.variants.flatMap((variant: { id?: string }) => variant.id ? [variant.id] : []);
+        await tx.productVariant.deleteMany({
+          where: { productId: req.params.id, ...(keptIds.length ? { id: { notIn: keptIds } } : {}) },
+        });
+        for (const variant of body.variants) {
+          const { id, ...variantData } = variant;
+          if (id) {
+            const result = await tx.productVariant.updateMany({
+              where: { id, productId: req.params.id },
+              data: variantData,
+            });
+            if (result.count !== 1) throw new BusinessError('Biến thể không thuộc sản phẩm này');
+          } else {
+            await tx.productVariant.create({ data: { ...variantData, productId: req.params.id } });
+          }
+        }
+      }
+      const product = await tx.product.update({
+        where: { id: req.params.id },
+        data,
+        include: { category: true, variants: true },
+      });
+      return product;
     });
     res.json({ ...mapProduct(p), categoryName: p.category.name });
-  } catch {
-    res.status(404).json({ message: 'Không tìm thấy sản phẩm' });
+  } catch (error) {
+    if (error instanceof BusinessError) {
+      return res.status(error.status).json({ message: error.message });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return res.status(404).json({ message: 'Không tìm thấy sản phẩm' });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return res.status(409).json({ message: 'SKU biến thể đã được sử dụng' });
+    }
+    throw error;
   }
 });
 

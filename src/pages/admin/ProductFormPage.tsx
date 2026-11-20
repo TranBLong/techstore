@@ -6,6 +6,16 @@ import { useToast } from '../../contexts/ToastContext';
 import { mediaUrl } from '../../services/api';
 import type { Category } from '../../types';
 
+interface VariantDraft {
+  id?: string;
+  color: string;
+  configuration: string;
+  sku: string;
+  price: string;
+  stock: string;
+  isActive: boolean;
+}
+
 export default function ProductFormPage() {
   const { id } = useParams();
   const isEdit = Boolean(id) && id !== 'them';
@@ -24,6 +34,7 @@ export default function ProductFormPage() {
     isFeatured: false,
     isBestSeller: false,
     status: 'active',
+    variants: [] as VariantDraft[],
   });
   const [uploading, setUploading] = useState(false);
 
@@ -49,6 +60,11 @@ export default function ProductFormPage() {
           isFeatured: p.isFeatured,
           isBestSeller: p.isBestSeller,
           status: p.status,
+          variants: (p.variants || []).map((variant) => ({
+            ...variant,
+            price: variant.price == null ? '' : String(variant.price),
+            stock: String(variant.stock),
+          })),
         });
       });
     }
@@ -90,6 +106,11 @@ export default function ProductFormPage() {
       isFeatured: form.isFeatured,
       isBestSeller: form.isBestSeller,
       status: form.status,
+      variants: form.variants.map((variant) => ({
+        ...variant,
+        price: variant.price ? Number(variant.price) : null,
+        stock: Number(variant.stock),
+      })),
     };
     try {
       if (isEdit && id) {
@@ -141,6 +162,44 @@ export default function ProductFormPage() {
           <div>
             <label className="block text-sm font-medium mb-1">Tồn kho *</label>
             <input required type="number" value={form.stock} onChange={(e) => set('stock', e.target.value)} className="w-full px-3 py-2.5 border rounded-lg text-sm" />
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-medium mb-2">Biến thể (màu sắc / cấu hình)</label>
+            <button type="button" onClick={() => setForm((current) => ({
+              ...current,
+              variants: [...current.variants, {
+                color: '', configuration: '', sku: `SKU-${Date.now()}`, price: '', stock: '0', isActive: true,
+              }],
+            }))} className="text-sm text-blue-600">+ Thêm biến thể</button>
+          </div>
+          <div className="space-y-3">
+            {form.variants.map((variant, index) => (
+              <div key={variant.id || variant.sku} className="grid sm:grid-cols-2 lg:grid-cols-6 gap-2 rounded-lg border p-3">
+                <input value={variant.color} onChange={(event) => {
+                  const variants = [...form.variants]; variants[index] = { ...variant, color: event.target.value }; set('variants', variants);
+                }} placeholder="Màu sắc" className="px-2 py-2 border rounded text-sm" />
+                <input value={variant.configuration} onChange={(event) => {
+                  const variants = [...form.variants]; variants[index] = { ...variant, configuration: event.target.value }; set('variants', variants);
+                }} placeholder="Cấu hình" className="px-2 py-2 border rounded text-sm" />
+                <input required value={variant.sku} onChange={(event) => {
+                  const variants = [...form.variants]; variants[index] = { ...variant, sku: event.target.value }; set('variants', variants);
+                }} placeholder="SKU" className="px-2 py-2 border rounded text-sm" />
+                <input type="number" min="0" value={variant.price} onChange={(event) => {
+                  const variants = [...form.variants]; variants[index] = { ...variant, price: event.target.value }; set('variants', variants);
+                }} placeholder="Giá riêng (tùy chọn)" className="px-2 py-2 border rounded text-sm" />
+                <input required type="number" min="0" value={variant.stock} onChange={(event) => {
+                  const variants = [...form.variants]; variants[index] = { ...variant, stock: event.target.value }; set('variants', variants);
+                }} placeholder="Tồn kho" className="px-2 py-2 border rounded text-sm" />
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={variant.isActive} onChange={(event) => {
+                    const variants = [...form.variants]; variants[index] = { ...variant, isActive: event.target.checked }; set('variants', variants);
+                  }} /> Bán</label>
+                  <button type="button" onClick={() => set('variants', form.variants.filter((_, i) => i !== index))} className="text-red-600 text-xs">Xóa</button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
         <div>

@@ -16,28 +16,28 @@ export const orderService = {
     localStorage.setItem(CART_KEY, JSON.stringify(items));
   },
 
-  addToCart(productId: string, quantity = 1) {
+  addToCart(productId: string, quantity = 1, variantId?: string) {
     const cart = this.getCart();
-    const existing = cart.find((i) => i.productId === productId);
+    const existing = cart.find((i) => i.productId === productId && i.variantId === variantId);
     if (existing) existing.quantity += quantity;
-    else cart.push({ productId, quantity });
+    else cart.push({ productId, variantId, quantity });
     this.setCart(cart);
     return cart;
   },
 
-  updateCartQuantity(productId: string, quantity: number) {
+  updateCartQuantity(productId: string, quantity: number, variantId?: string) {
     let cart = this.getCart();
-    if (quantity <= 0) cart = cart.filter((i) => i.productId !== productId);
+    if (quantity <= 0) cart = cart.filter((i) => !(i.productId === productId && i.variantId === variantId));
     else {
-      const item = cart.find((i) => i.productId === productId);
+      const item = cart.find((i) => i.productId === productId && i.variantId === variantId);
       if (item) item.quantity = quantity;
     }
     this.setCart(cart);
     return cart;
   },
 
-  removeFromCart(productId: string) {
-    const cart = this.getCart().filter((i) => i.productId !== productId);
+  removeFromCart(productId: string, variantId?: string) {
+    const cart = this.getCart().filter((i) => !(i.productId === productId && i.variantId === variantId));
     this.setCart(cart);
     return cart;
   },
@@ -69,14 +69,14 @@ export const orderService = {
     discount: number;
     shippingFee: number;
     total: number;
-    paymentMethod: 'cod' | 'transfer';
+    paymentMethod: 'cod' | 'transfer' | 'vnpay' | 'momo';
     shippingInfo: Order['shippingInfo'];
     couponCode?: string;
   }) {
     return api<Order>('/orders', {
       method: 'POST',
       body: JSON.stringify({
-        items: data.items.map(({ productId, quantity }) => ({ productId, quantity })),
+        items: data.items.map(({ productId, variantId, quantity }) => ({ productId, variantId, quantity })),
         paymentMethod: data.paymentMethod,
         shippingInfo: data.shippingInfo,
         couponCode: data.couponCode || undefined,

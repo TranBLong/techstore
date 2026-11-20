@@ -1,9 +1,60 @@
 import { Router } from 'express';
+import type { Response } from 'express';
 import { prisma } from '../prisma.js';
 import { adminRequired } from '../middleware/auth.js';
 import { mapOrder } from '../utils/map.js';
 
 const router = Router();
+
+function csvCell(value: string | number) {
+  let text = String(value);
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function sendCsv(res: Response, filename: string, rows: (string | number)[][]) {
+  const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(csv);
+}
+
+router.get('/report', adminRequired, async (req, res) => {
+  const type = String(req.query.type || 'orders');
+  if (type !== 'orders' && type !== 'revenue') {
+    return res.status(400).json({ message: 'Loại báo cáo không hợp lệ' });
+  }
+  const orders = await prisma.order.findMany({
+    orderBy: { createdAt: 'asc' },
+  });
+  if (type === 'orders') {
+    const rows: (string | number)[][] = [[
+      'Mã đơn', 'Khách hàng', 'Email', 'Trạng thái', 'Thanh toán',
+      'Tạm tính', 'Giảm giá', 'Phí ship', 'Tổng tiền', 'Ngày tạo',
+    ]];
+    for (const order of orders) {
+      rows.push([
+        order.id, order.userName, order.userEmail, order.status,
+        `${order.paymentMethod} / ${order.paymentStatus}`,
+        order.subtotal, order.discount, order.shippingFee, order.total,
+        order.createdAt.toISOString(),
+      ]);
+    }
+    return sendCsv(res, 'techstore-orders.csv', rows);
+  }
+
+  const monthlyRevenue = new Map<string, number>();
+  for (const order of orders) {
+    if (order.paymentStatus !== 'paid') continue;
+    const month = order.createdAt.toISOString().slice(0, 7);
+    monthlyRevenue.set(month, (monthlyRevenue.get(month) || 0) + order.total);
+  }
+  const rows: (string | number)[][] = [['Tháng', 'Doanh thu đã thanh toán']];
+  for (const [month, revenue] of [...monthlyRevenue.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    rows.push([month, revenue]);
+  }
+  return sendCsv(res, 'techstore-revenue.csv', rows);
+});
 
 router.get('/dashboard', adminRequired, async (_req, res) => {
   const [productCount, userCount, orders, deliveredOrders, categories] = await Promise.all([

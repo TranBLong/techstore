@@ -15,6 +15,8 @@ import couponRoutes from './routes/coupons.js';
 import reviewRoutes from './routes/reviews.js';
 import wishlistRoutes from './routes/wishlist.js';
 import contactRoutes from './routes/contacts.js';
+import addressRoutes from './routes/addresses.js';
+import paymentRoutes from './routes/payments.js';
 import errorHandler from './middleware/errorHandler.js';
 import { createApiLimiter } from './middleware/rateLimit.js';
 import { getFrontendOrigins } from './utils/config.js';
@@ -65,6 +67,8 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api', reviewRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/contacts', contactRoutes);
+app.use('/api/addresses', addressRoutes);
+app.use('/api/payments', paymentRoutes);
 
 /** 404 chỉ cho đường dẫn /api/* */
 app.use('/api', (_req: Request, res: Response) => {

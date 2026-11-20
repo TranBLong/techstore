@@ -78,7 +78,7 @@ export default function OrderDetailPage() {
     );
   }
 
-  const canCancel = order.status === 'pending' || order.status === 'processing';
+  const canCancel = order.paymentStatus !== 'paid' && (order.status === 'pending' || order.status === 'processing');
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">

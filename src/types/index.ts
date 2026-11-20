@@ -15,6 +15,18 @@ export interface User {
   avatar?: string;
 }
 
+export interface Address {
+  id: string;
+  label: string;
+  fullName: string;
+  phone: string;
+  address: string;
+  district: string;
+  city: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
 export interface Category {
   id: string;
   name: string;
@@ -22,6 +34,16 @@ export interface Category {
   description: string;
   icon?: string;
   productCount?: number;
+}
+
+export interface ProductVariant {
+  id: string;
+  color: string;
+  configuration: string;
+  sku: string;
+  price: number | null;
+  stock: number;
+  isActive: boolean;
 }
 
 export interface Product {
@@ -43,16 +65,21 @@ export interface Product {
   isBestSeller: boolean;
   status: 'active' | 'inactive';
   createdAt: string;
+  variants?: ProductVariant[];
 }
 
 export interface CartItem {
   productId: string;
+  variantId?: string;
   quantity: number;
   product?: Product;
+  variant?: ProductVariant;
 }
 
 export interface OrderItem {
   productId: string;
+  variantId?: string;
+  variantName?: string;
   productName: string;
   productImage: string;
   price: number;
@@ -72,7 +99,7 @@ export interface Order {
   shippingFee: number;
   total: number;
   status: OrderStatus;
-  paymentMethod: 'cod' | 'transfer';
+  paymentMethod: 'cod' | 'transfer' | 'vnpay' | 'momo';
   paymentStatus: 'unpaid' | 'paid';
   paidAt?: string | null;
   couponCode?: string | null;
@@ -88,6 +115,7 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   statusLogs?: OrderStatusLog[];
+  emailSent?: boolean;
 }
 
 export interface OrderStatusLog {

@@ -9,6 +9,7 @@ import { validate } from '../utils/validate.js';
 import { assertCouponUsable } from './coupons.js';
 import { BusinessError, notFound, forbidden } from '../utils/errors.js';
 import { restoreOrderStock } from '../utils/orderStock.js';
+import { sendOrderConfirmation } from '../services/orderEmail.js';
 
 const router = Router();
 
@@ -55,12 +56,13 @@ const createOrderSchema = z.object({
     .array(
       z.object({
         productId: z.string().min(1),
+        variantId: z.string().min(1).optional(),
         quantity: z.number().int().positive(),
       }),
     )
     .min(1, 'Giỏ hàng trống'),
   shippingInfo: shippingInfoSchema,
-  paymentMethod: z.enum(['cod', 'transfer']).optional().default('cod'),
+  paymentMethod: z.enum(['cod', 'transfer', 'vnpay', 'momo']).optional().default('cod'),
   couponCode: z.string().optional(),
 });
 
@@ -131,22 +133,26 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
   const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
   if (!user) return res.status(401).json({ message: 'Chưa đăng nhập' });
 
-  const rawItems: { productId: string; quantity: number }[] = body.items;
+  const rawItems: { productId: string; variantId?: string; quantity: number }[] = body.items;
 
   // Gom số lượng theo productId (tránh trùng dòng)
-  const qtyMap = new Map<string, number>();
+  const qtyMap = new Map<string, { productId: string; variantId?: string; quantity: number }>();
   for (const it of rawItems) {
     const id = String(it.productId || '').trim();
+    const variantId = typeof it.variantId === 'string' ? it.variantId.trim() : undefined;
     const qty = Number(it.quantity);
     if (!id || !Number.isSafeInteger(qty) || qty <= 0) {
       return res.status(400).json({ message: 'Mỗi sản phẩm cần productId và quantity > 0' });
     }
-    qtyMap.set(id, (qtyMap.get(id) || 0) + Math.floor(qty));
+    const key = `${id}:${variantId || ''}`;
+    const existing = qtyMap.get(key);
+    qtyMap.set(key, { productId: id, variantId, quantity: (existing?.quantity || 0) + Math.floor(qty) });
   }
 
-  const productIds = [...qtyMap.keys()];
+  const productIds = [...new Set([...qtyMap.values()].map((item) => item.productId))];
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
+    include: { variants: true },
   });
   const productById = new Map(products.map((p) => [p.id, p]));
 
@@ -155,11 +161,13 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
     productId: string;
     productName: string;
     productImage: string;
+    variantId?: string;
+    variantName?: string;
     price: number;
     quantity: number;
   }[] = [];
 
-  for (const [productId, quantity] of qtyMap) {
+  for (const { productId, variantId, quantity } of qtyMap.values()) {
     const p = productById.get(productId);
     if (!p) {
       return res.status(400).json({ message: `Không tìm thấy sản phẩm: ${productId}` });
@@ -167,14 +175,22 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
     if (p.status !== 'active') {
       return res.status(400).json({ message: `Sản phẩm "${p.name}" đang ngừng bán` });
     }
-    if (p.stock < quantity) {
+    const variant = variantId ? p.variants.find((entry) => entry.id === variantId) : undefined;
+    if (p.variants.length && !variant) {
+      return res.status(400).json({ message: `Vui lòng chọn biến thể cho sản phẩm "${p.name}"` });
+    }
+    if (variantId && (!variant || !variant.isActive)) {
+      return res.status(400).json({ message: `Biến thể của sản phẩm "${p.name}" không khả dụng` });
+    }
+    const availableStock = variant?.stock ?? p.stock;
+    if (availableStock < quantity) {
       return res.status(400).json({
-        message: `Sản phẩm "${p.name}" chỉ còn ${p.stock} trong kho (bạn chọn ${quantity})`,
+        message: `Sản phẩm "${p.name}" chỉ còn ${availableStock} trong kho (bạn chọn ${quantity})`,
       });
     }
 
     // Giá lấy từ DB, ưu tiên salePrice
-    const unitPrice = p.salePrice != null ? p.salePrice : p.price;
+    const unitPrice = variant?.price ?? (p.salePrice != null ? p.salePrice : p.price);
     let images: string[] = [];
     try {
       images = JSON.parse(p.images || '[]');
@@ -186,6 +202,10 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
       productId: p.id,
       productName: p.name,
       productImage: images[0] || '',
+      ...(variant && {
+        variantId: variant.id,
+        variantName: [variant.color, variant.configuration].filter(Boolean).join(' · ') || variant.sku,
+      }),
       price: unitPrice,
       quantity,
     });
@@ -207,24 +227,40 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
   const total = Math.max(0, subtotal - discount + shippingFee);
 
   const shippingInfo = body.shippingInfo;
-  const paymentMethod = body.paymentMethod === 'transfer' ? 'transfer' : 'cod';
+  const paymentMethod = body.paymentMethod;
 
   try {
     const order = await prisma.$transaction(async (tx) => {
       // Trong transaction: kiểm tra lại tồn kho (tránh race) rồi trừ
       for (const item of orderItems) {
-        const updated = await tx.product.updateMany({
-          where: {
-            id: item.productId,
-            stock: { gte: item.quantity },
-            status: 'active',
-          },
-          data: { stock: { decrement: item.quantity } },
-        });
+        const updated = item.variantId
+          ? await tx.productVariant.updateMany({
+              where: {
+                id: item.variantId,
+                productId: item.productId,
+                isActive: true,
+                stock: { gte: item.quantity },
+              },
+              data: { stock: { decrement: item.quantity } },
+            })
+          : await tx.product.updateMany({
+              where: {
+                id: item.productId,
+                stock: { gte: item.quantity },
+                status: 'active',
+              },
+              data: { stock: { decrement: item.quantity } },
+            });
         if (updated.count === 0) {
           throw new BusinessError(
             `Không đủ tồn kho cho sản phẩm "${item.productName}" (có thể vừa bị đặt hết)`
           );
+        }
+        if (item.variantId) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { decrement: item.quantity } },
+          });
         }
       }
 
@@ -273,7 +309,16 @@ router.post('/', authRequired, validate(createOrderSchema), async (req, res) => 
       });
     });
 
-    res.status(201).json(mapOrder(order));
+    let emailSent = false;
+    try {
+      emailSent = await sendOrderConfirmation({
+        ...mapOrder(order),
+        shippingInfo: mapOrder(order).shippingInfo,
+      });
+    } catch (error) {
+      console.error(`[OrderEmail] Không gửi được xác nhận cho đơn ${order.id}`, error);
+    }
+    res.status(201).json({ ...mapOrder(order), emailSent });
   } catch (err: unknown) {
     if (err instanceof BusinessError) {
       return res.status(err.status).json({ message: err.message });
@@ -371,6 +416,9 @@ router.post('/:id/cancel', authRequired, async (req, res) => {
             ? 'Đơn đã được hủy trước đó'
             : 'Chỉ hủy được đơn đang chờ xác nhận hoặc đang xử lý',
         );
+      }
+      if (current.paymentStatus === 'paid') {
+        throw new BusinessError('Đơn đã thanh toán; vui lòng liên hệ hỗ trợ để được hoàn tiền');
       }
       await restoreOrderStock(tx, current);
       await tx.order.update({ where: { id }, data: { status: 'cancelled' } });

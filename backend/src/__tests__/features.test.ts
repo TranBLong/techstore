@@ -1,12 +1,15 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import app from '../app.js';
 import { prisma } from '../prisma.js';
 
 describe('Các chức năng bổ sung', () => {
+  afterEach(() => vi.unstubAllEnvs());
   let adminToken = '';
   let userToken = '';
+  let otherUserToken = '';
   let adminId = '';
   let userId = '';
   let categoryId = '';
@@ -31,6 +34,9 @@ describe('Các chức năng bổ sung', () => {
     const user = await prisma.user.create({
       data: { email: 'features-user@test.com', password: passwordHash, fullName: 'User Features', role: 'USER' },
     });
+    await prisma.user.create({
+      data: { email: 'features-other@test.com', password: passwordHash, fullName: 'Other User', role: 'USER' },
+    });
     const category = await prisma.category.create({
       data: { name: 'Features Cat', slug: 'features-cat', description: '' },
     });
@@ -50,8 +56,11 @@ describe('Các chức năng bổ sung', () => {
       .send({ email: 'features-admin@test.com', password: 'test1234' });
     const userLogin = await request(app).post('/api/auth/login')
       .send({ email: 'features-user@test.com', password: 'test1234' });
+    const otherUserLogin = await request(app).post('/api/auth/login')
+      .send({ email: 'features-other@test.com', password: 'test1234' });
     adminToken = adminLogin.body.token;
     userToken = userLogin.body.token;
+    otherUserToken = otherUserLogin.body.token;
 
     expect(adminToken).toBeTruthy();
     expect(userToken).toBeTruthy();
@@ -106,7 +115,7 @@ describe('Các chức năng bổ sung', () => {
   async function createOrder(options: {
     productId: string;
     couponCode?: string;
-    paymentMethod?: 'cod' | 'transfer';
+    paymentMethod?: 'cod' | 'transfer' | 'vnpay' | 'momo';
   }) {
     return request(app)
       .post('/api/orders')
@@ -125,6 +134,157 @@ describe('Các chức năng bổ sung', () => {
         },
       });
   }
+
+  describe('Sổ địa chỉ và quản trị', () => {
+    it('giới hạn địa chỉ theo user và giữ đúng một địa chỉ mặc định', async () => {
+      const first = await request(app)
+        .post('/api/addresses')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ label: 'Nhà', fullName: 'User Features', phone: '0900000000', address: '1 Test', district: 'HK', city: 'HN' });
+      expect(first.status).toBe(201);
+      expect(first.body.isDefault).toBe(true);
+
+      const second = await request(app)
+        .post('/api/addresses')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ label: 'Công ty', fullName: 'User Features', phone: '0900000000', address: '2 Test', district: 'BT', city: 'HN', isDefault: true });
+      expect(second.status).toBe(201);
+      const foreignUpdate = await request(app)
+        .put(`/api/addresses/${first.body.id}`)
+        .set('Authorization', `Bearer ${otherUserToken}`)
+        .send({ label: 'Khác', fullName: 'Other User', phone: '0900000001', address: '3 Test', district: 'HK', city: 'HN' });
+      expect(foreignUpdate.status).toBe(404);
+
+      await request(app).delete(`/api/addresses/${second.body.id}`)
+        .set('Authorization', `Bearer ${userToken}`).expect(200);
+      const remaining = await request(app).get('/api/addresses').set('Authorization', `Bearer ${userToken}`);
+      expect(remaining.body).toHaveLength(1);
+      expect(remaining.body[0]).toMatchObject({ id: first.body.id, isDefault: true });
+    });
+
+    it('admin tạo/xóa user, bảo toàn user có đơn và xuất báo cáo CSV', async () => {
+      const created = await request(app)
+        .post('/api/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: 'created-user@test.com', password: 'created123', fullName: 'Created User', role: 'USER' });
+      expect(created.status).toBe(201);
+      expect(created.body.password).toBeUndefined();
+      expect((await request(app).post('/api/auth/login')
+        .send({ email: 'created-user@test.com', password: 'created123' })).status).toBe(200);
+      expect((await request(app).delete(`/api/users/${created.body.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)).status).toBe(200);
+
+      const order = await createOrder({ productId: productId });
+      expect(order.status).toBe(201);
+      const deleteWithOrder = await request(app).delete(`/api/users/${userId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(deleteWithOrder.status).toBe(409);
+
+      const report = await request(app).get('/api/stats/report?type=orders')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(report.status).toBe(200);
+      expect(report.headers['content-type']).toContain('text/csv');
+      expect(report.text).toContain('Mã đơn');
+      expect((await request(app).get('/api/stats/report?type=revenue')
+        .set('Authorization', `Bearer ${userToken}`)).status).toBe(403);
+    });
+  });
+
+  it('bán biến thể theo giá và tồn kho riêng, hủy đơn hoàn kho biến thể', async () => {
+    const product = await createProduct(4);
+    const updated = await request(app)
+      .put(`/api/products/${product.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ variants: [{ color: 'Đen', configuration: '256GB', sku: `SKU-${Date.now()}`, price: 1_500_000, stock: 3 }] });
+    expect(updated.status).toBe(200);
+    const variant = updated.body.variants[0];
+    expect(updated.body.stock).toBe(3);
+
+    const withoutVariant = await createOrder({ productId: product.id });
+    expect(withoutVariant.status).toBe(400);
+
+    const order = await request(app).post('/api/orders')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        items: [{ productId: product.id, variantId: variant.id, quantity: 1 }],
+        paymentMethod: 'cod',
+        shippingInfo: { fullName: 'User Features', phone: '0900000000', email: 'features-user@test.com', address: '1 Test', city: 'HN', district: 'HK' },
+      });
+    expect(order.status).toBe(201);
+    expect(order.body.items[0]).toMatchObject({ variantId: variant.id, variantName: 'Đen · 256GB', price: 1_500_000 });
+    expect((await prisma.productVariant.findUniqueOrThrow({ where: { id: variant.id } })).stock).toBe(2);
+    await request(app).post(`/api/orders/${order.body.id}/cancel`)
+      .set('Authorization', `Bearer ${userToken}`).expect(200);
+    expect((await prisma.productVariant.findUniqueOrThrow({ where: { id: variant.id } })).stock).toBe(3);
+  });
+
+  it('chỉ ghi nhận VNPay sau IPN có chữ ký, đúng merchant và số tiền', async () => {
+    const order = await createOrder({ productId: productId, paymentMethod: 'vnpay' });
+    expect(order.status).toBe(201);
+    vi.stubEnv('VNPAY_TMN_CODE', '');
+    vi.stubEnv('VNPAY_HASH_SECRET', '');
+    vi.stubEnv('VNPAY_URL', '');
+    vi.stubEnv('VNPAY_RETURN_URL', '');
+    const missingConfig = await request(app).post('/api/payments/create')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ orderId: order.body.id, provider: 'vnpay' });
+    expect(missingConfig.status).toBe(503);
+
+    const secret = 'vnpay-test-secret';
+    vi.stubEnv('VNPAY_TMN_CODE', 'TESTMERCHANT');
+    vi.stubEnv('VNPAY_HASH_SECRET', secret);
+    const invalid = await request(app).get('/api/payments/vnpay/ipn')
+      .query({ vnp_TmnCode: 'TESTMERCHANT', vnp_TxnRef: order.body.id, vnp_SecureHash: 'invalid' });
+    expect(invalid.body.RspCode).toBe('97');
+
+    const values: Record<string, string> = {
+      vnp_TmnCode: 'TESTMERCHANT',
+      vnp_TxnRef: order.body.id,
+      vnp_Amount: String(order.body.total * 100),
+      vnp_ResponseCode: '00',
+      vnp_TransactionStatus: '00',
+    };
+    const payload = Object.keys(values).sort()
+      .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(values[key])}`).join('&');
+    values.vnp_SecureHash = crypto.createHmac('sha512', secret).update(payload).digest('hex');
+    const confirmed = await request(app).get('/api/payments/vnpay/ipn').query(values);
+    expect(confirmed.body.RspCode).toBe('00');
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.body.id } })).paymentStatus).toBe('paid');
+  });
+
+  it('xác minh chữ ký MoMo trước khi xác nhận thanh toán', async () => {
+    const order = await createOrder({ productId, paymentMethod: 'momo' });
+    expect(order.status).toBe(201);
+    vi.stubEnv('MOMO_PARTNER_CODE', 'TESTPARTNER');
+    vi.stubEnv('MOMO_ACCESS_KEY', 'momo-test-access');
+    vi.stubEnv('MOMO_SECRET_KEY', 'momo-test-secret');
+    const body: Record<string, string | number> = {
+      accessKey: 'momo-test-access',
+      amount: order.body.total,
+      extraData: '',
+      message: 'Success',
+      orderId: order.body.id,
+      orderInfo: `Thanh toan don hang ${order.body.id}`,
+      orderType: 'momo_wallet',
+      partnerCode: 'TESTPARTNER',
+      payType: 'qr',
+      requestId: 'request-123',
+      responseTime: '20261120233000',
+      resultCode: 0,
+      transId: 12345,
+    };
+    const signedValue = Object.keys(body).sort().map((key) => `${key}=${body[key]}`).join('&');
+    const signature = crypto.createHmac('sha256', 'momo-test-secret').update(signedValue).digest('hex');
+    const invalid = await request(app).post('/api/payments/momo/ipn')
+      .send({ ...body, signature: 'invalid' });
+    expect(invalid.status).toBe(400);
+
+    const confirmed = await request(app).post('/api/payments/momo/ipn')
+      .send({ ...body, signature });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.resultCode).toBe(0);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.body.id } })).paymentStatus).toBe('paid');
+  });
 
   it('token cũ bị từ chối khi tài khoản bị khóa và role admin được kiểm tra lại từ DB', async () => {
     try {
@@ -462,22 +622,43 @@ describe('Các chức năng bổ sung', () => {
       expect(updatedProduct.rating).toBe(5);
       expect(updatedProduct.reviewCount).toBe(1);
 
+      const forbiddenEdit = await request(app)
+        .patch(`/api/reviews/${created.body.id}`)
+        .set('Authorization', `Bearer ${otherUserToken}`)
+        .send({ rating: 1, comment: 'Không phải chủ sở hữu' });
+      expect(forbiddenEdit.status).toBe(403);
+      const forbiddenDelete = await request(app)
+        .delete(`/api/reviews/${created.body.id}`)
+        .set('Authorization', `Bearer ${otherUserToken}`);
+      expect(forbiddenDelete.status).toBe(403);
+
+      const ownerUpdate = await request(app)
+        .patch(`/api/reviews/${created.body.id}`)
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ rating: 4, comment: 'Đã cập nhật' });
+      expect(ownerUpdate.status).toBe(200);
+      expect(ownerUpdate.body).toMatchObject({ rating: 4, comment: 'Đã cập nhật' });
+
       const publicReviews = await request(app).get(`/api/products/${product.id}/reviews`);
       expect(publicReviews.status).toBe(200);
       expect(publicReviews.body.total).toBe(1);
       expect(publicReviews.body.items[0]).toMatchObject({
         id: created.body.id,
         userId,
-        rating: 5,
-        comment: 'Sản phẩm tốt',
+        rating: 4,
+        comment: 'Đã cập nhật',
       });
-      expect(publicReviews.body.rating).toBe(5);
+      expect(publicReviews.body.rating).toBe(4);
       expect(publicReviews.body.reviewCount).toBe(1);
 
-      const forbiddenDelete = await request(app)
+      const ownerDelete = await request(app)
         .delete(`/api/reviews/${created.body.id}`)
         .set('Authorization', `Bearer ${userToken}`);
-      expect(forbiddenDelete.status).toBe(403);
+      expect(ownerDelete.status).toBe(200);
+      expect(ownerDelete.body.message).toMatch(/xóa/i);
+      const deletedProduct = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+      expect(deletedProduct.reviewCount).toBe(0);
+      expect(deletedProduct.rating).toBe(0);
     });
   });
 

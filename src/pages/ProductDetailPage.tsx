@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Star, ShoppingCart, Minus, Plus, ChevronRight, Heart } from 'lucide-react';
+import { Star, ShoppingCart, Minus, Plus, ChevronRight, Heart, Pencil, Trash2 } from 'lucide-react';
 import { productService } from '../services/productService';
 import { reviewService } from '../services/reviewService';
 import { useCart } from '../contexts/CartContext';
@@ -21,9 +21,10 @@ export default function ProductDetailPage() {
   const [related, setRelated] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [qty, setQty] = useState(1);
+  const [selectedVariantId, setSelectedVariantId] = useState('');
   const [activeImg, setActiveImg] = useState(0);
   const { addItem } = useCart();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { showToast } = useToast();
   const { isWishlisted, toggle } = useWishlist();
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -34,6 +35,8 @@ export default function ProductDetailPage() {
   const [myComment, setMyComment] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewBlockedMsg, setReviewBlockedMsg] = useState('');
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+  const reviewFormRef = useRef<HTMLDivElement>(null);
   usePageTitle(product?.name);
 
   const loadReviews = (productId: string, page = 1) => {
@@ -59,6 +62,7 @@ export default function ProductDetailPage() {
       .getById(id)
       .then(async (p) => {
         setProduct(p);
+        setSelectedVariantId(p.variants?.find((variant) => variant.isActive)?.id || '');
         const all = await productService.getAll({ category: p.categoryId, limit: '8' });
         setRelated(all.items.filter((x) => x.id !== p.id).slice(0, 4));
         await loadReviews(p.id, 1);
@@ -76,7 +80,9 @@ export default function ProductDetailPage() {
     );
   }
 
-  const price = product.salePrice ?? product.price;
+  const selectedVariant = product.variants?.find((variant) => variant.id === selectedVariantId);
+  const price = selectedVariant?.price ?? product.salePrice ?? product.price;
+  const availableStock = selectedVariant?.stock ?? product.stock;
   const images = product.images?.length ? product.images : ['/images/products/placeholder.svg'];
 
   return (
@@ -134,28 +140,41 @@ export default function ProductDetailPage() {
             {product.salePrice && <span className="ml-3 text-lg text-gray-400 line-through">{formatCurrency(product.price)}</span>}
           </div>
           <p className="text-gray-600 text-sm mb-6">{product.description}</p>
+          {!!product.variants?.length && (
+            <div className="mb-5">
+              <label className="block text-sm font-medium mb-2">Màu sắc / cấu hình</label>
+              <select value={selectedVariantId} onChange={(event) => { setSelectedVariantId(event.target.value); setQty(1); }} className="w-full max-w-md px-3 py-2.5 border border-gray-200 rounded-lg text-sm">
+                {product.variants.filter((variant) => variant.isActive).map((variant) => (
+                  <option key={variant.id} value={variant.id}>
+                    {[variant.color, variant.configuration].filter(Boolean).join(' · ') || variant.sku} · {formatCurrency(variant.price ?? product.salePrice ?? product.price)} · Còn {variant.stock}
+                  </option>
+                ))}
+              </select>
+              {!selectedVariant && <p className="text-xs text-red-600 mt-1">Sản phẩm hiện không có biến thể khả dụng.</p>}
+            </div>
+          )}
           <div className="flex items-center gap-4 mb-6">
             <span className="text-sm font-medium">Số lượng:</span>
             <div className="flex items-center border rounded-lg">
-              <button onClick={() => setQty(Math.max(1, qty - 1))} className="p-2" disabled={product.stock <= 0}><Minus size={16} /></button>
+              <button onClick={() => setQty(Math.max(1, qty - 1))} className="p-2" disabled={availableStock <= 0}><Minus size={16} /></button>
               <span className="w-12 text-center font-medium">{qty}</span>
-              <button onClick={() => setQty(Math.min(product.stock, qty + 1))} className="p-2" disabled={product.stock <= 0 || qty >= product.stock}><Plus size={16} /></button>
+              <button onClick={() => setQty(Math.min(availableStock, qty + 1))} className="p-2" disabled={availableStock <= 0 || qty >= availableStock}><Plus size={16} /></button>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={async () => {
                 try {
-                  await addItem(product.id, qty);
+                  await addItem(product.id, qty, selectedVariant?.id);
                   showToast('Đã thêm vào giỏ', 'success');
                 } catch (error: unknown) {
                   showToast(error instanceof Error ? error.message : 'Không thể thêm vào giỏ', 'error');
                 }
               }}
-              disabled={product.stock <= 0}
+              disabled={availableStock <= 0 || (!!product.variants?.length && !selectedVariant)}
               className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <ShoppingCart size={20} /> {product.stock <= 0 ? 'Hết hàng' : 'Thêm vào giỏ hàng'}
+              <ShoppingCart size={20} /> {availableStock <= 0 ? 'Hết hàng' : 'Thêm vào giỏ hàng'}
             </button>
             <button
               onClick={async () => {
@@ -201,7 +220,7 @@ export default function ProductDetailPage() {
         </h2>
 
         {isAuthenticated ? (
-          <div className="bg-white border rounded-xl p-4 mb-6 space-y-3">
+          <div ref={reviewFormRef} className="bg-white border rounded-xl p-4 mb-6 space-y-3">
             <p className="text-sm font-medium">Viết đánh giá của bạn</p>
             <div className="flex gap-1">
               {[1, 2, 3, 4, 5].map((star) => (
@@ -227,8 +246,14 @@ export default function ProductDetailPage() {
                 setReviewSubmitting(true);
                 setReviewBlockedMsg('');
                 try {
-                  await reviewService.create(id, { rating: myRating, comment: myComment });
-                  showToast('Đã gửi đánh giá', 'success');
+                  if (editingReviewId) {
+                    await reviewService.update(editingReviewId, { rating: myRating, comment: myComment });
+                    showToast('Đã cập nhật đánh giá', 'success');
+                  } else {
+                    await reviewService.create(id, { rating: myRating, comment: myComment });
+                    showToast('Đã gửi đánh giá', 'success');
+                  }
+                  setEditingReviewId(null);
                   setMyComment('');
                   setMyRating(5);
                   await loadReviews(id, 1);
@@ -242,8 +267,13 @@ export default function ProductDetailPage() {
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60"
             >
-              {reviewSubmitting ? 'Đang gửi...' : 'Gửi đánh giá'}
+              {reviewSubmitting ? 'Đang lưu...' : editingReviewId ? 'Cập nhật đánh giá' : 'Gửi đánh giá'}
             </button>
+            {editingReviewId && (
+              <button type="button" onClick={() => { setEditingReviewId(null); setMyComment(''); setMyRating(5); }} className="ml-2 px-4 py-2 border rounded-lg text-sm">
+                Hủy sửa
+              </button>
+            )}
           </div>
         ) : (
           <p className="text-sm text-gray-500 mb-6">
@@ -255,13 +285,40 @@ export default function ProductDetailPage() {
           {reviews.length === 0 && <p className="text-sm text-gray-400">Chưa có đánh giá nào.</p>}
           {reviews.map((review) => (
             <div key={review.id} className="border border-gray-100 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-2">
                 <span className="font-medium text-sm">{review.userName}</span>
                 <span className="flex items-center gap-0.5">
                   {Array.from({ length: 5 }).map((_, index) => (
                     <Star key={index} size={12} className={index < review.rating ? 'text-amber-400 fill-amber-400' : 'text-gray-200'} />
                   ))}
                 </span>
+                </div>
+                {user?.id === review.userId && (
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => {
+                      setEditingReviewId(review.id);
+                      setMyRating(review.rating);
+                      setMyComment(review.comment);
+                      reviewFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }} className="text-blue-600" aria-label="Sửa đánh giá">
+                      <Pencil size={15} />
+                    </button>
+                    <button type="button" onClick={async () => {
+                      if (!id || !window.confirm('Xóa đánh giá này?')) return;
+                      try {
+                        await reviewService.remove(review.id);
+                        if (editingReviewId === review.id) setEditingReviewId(null);
+                        await loadReviews(id, reviewPage);
+                        showToast('Đã xóa đánh giá', 'success');
+                      } catch (error: unknown) {
+                        showToast(error instanceof Error ? error.message : 'Không thể xóa đánh giá', 'error');
+                      }
+                    }} className="text-red-600" aria-label="Xóa đánh giá">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                )}
               </div>
               {review.comment && <p className="text-sm text-gray-600">{review.comment}</p>}
               <p className="text-xs text-gray-400 mt-1">{new Date(review.createdAt).toLocaleDateString('vi-VN')}</p>

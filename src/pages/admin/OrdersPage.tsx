@@ -189,7 +189,12 @@ export default function AdminOrdersPage() {
           <p>{selected.shippingInfo?.fullName} · {selected.shippingInfo?.phone}</p>
           <p className="text-gray-500 mb-3">{selected.shippingInfo?.address}, {selected.shippingInfo?.district}, {selected.shippingInfo?.city}</p>
           <p className="text-gray-600 mb-3">
-            Thanh toán: {selected.paymentMethod === 'transfer' ? 'Chuyển khoản' : 'COD'} ·{' '}
+            Thanh toán: {{
+              cod: 'COD',
+              transfer: 'Chuyển khoản ngân hàng',
+              vnpay: 'VNPay',
+              momo: 'MoMo',
+            }[selected.paymentMethod]} ·{' '}
             {selected.paymentStatus === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}
             {selected.paidAt ? ` lúc ${formatDate(selected.paidAt)}` : ''}
           </p>
