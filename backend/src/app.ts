@@ -1,4 +1,6 @@
 import express from 'express';
+import type { ErrorRequestHandler, Request, Response, NextFunction } from 'express';
+import 'express-async-errors';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
@@ -43,5 +45,30 @@ app.use('/api/stats', statsRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api', reviewRoutes);
 app.use('/api/wishlist', wishlistRoutes);
+
+/** 404 chỉ cho đường dẫn /api/* */
+app.use('/api', (_req: Request, res: Response) => {
+  res.status(404).json({ message: 'Không tìm thấy đường dẫn' });
+});
+
+/** Middleware lỗi chung — phải đặt cuối cùng */
+const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ message: 'Dữ liệu JSON không hợp lệ' });
+  }
+
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ message: 'Dữ liệu gửi lên quá lớn' });
+  }
+
+  console.error(err);
+  res.status(500).json({ message: 'Lỗi máy chủ, vui lòng thử lại sau' });
+};
+
+app.use(errorHandler);
 
 export default app;

@@ -461,4 +461,19 @@ describe('TechStore API', () => {
     const response = await request(app).get('/api/users').set('Authorization', `Bearer ${userToken}`);
     expect(response.status).toBe(403);
   });
+
+  it('GET đường dẫn /api không tồn tại trả 404', async () => {
+    const response = await request(app).get('/api/duong-dan-khong-ton-tai');
+    expect(response.status).toBe(404);
+    expect(response.body.message).toBeTruthy();
+  });
+
+  it('POST body JSON sai cú pháp trả 400', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .set('Content-Type', 'application/json')
+      .send('{bad json');
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/JSON|không hợp lệ/i);
+  });
 });
