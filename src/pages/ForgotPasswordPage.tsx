@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { authService } from '../services/authService';
 import { useToast } from '../contexts/ToastContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function ForgotPasswordPage() {
+  usePageTitle('Quên mật khẩu');
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');

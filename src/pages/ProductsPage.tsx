@@ -7,10 +7,12 @@ import EmptyState from '../components/common/EmptyState';
 import Loading from '../components/common/Loading';
 import { productService } from '../services/productService';
 import type { Product, Category } from '../types';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const PER_PAGE = 12;
 
 export default function ProductsPage() {
+  usePageTitle('Sản phẩm');
   const [searchParams, setSearchParams] = useSearchParams();
   const [mobileFilter, setMobileFilter] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);

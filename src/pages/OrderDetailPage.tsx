@@ -7,8 +7,10 @@ import OrderSummary from '../components/order/OrderSummary';
 import Loading from '../components/common/Loading';
 import EmptyState from '../components/common/EmptyState';
 import type { Order } from '../types';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function OrderDetailPage() {
+  usePageTitle('Chi tiết đơn hàng');
   const { id } = useParams<{ id: string }>();
   const { showToast } = useToast();
   const [order, setOrder] = useState<Order | null>(null);

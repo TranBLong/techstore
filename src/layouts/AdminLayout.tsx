@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ToastContainer from '../components/common/Toast';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const navItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -28,6 +29,7 @@ const navItems = [
 ];
 
 export default function AdminLayout() {
+  usePageTitle('Quản trị');
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);

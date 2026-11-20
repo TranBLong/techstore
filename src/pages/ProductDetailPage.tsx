@@ -13,6 +13,7 @@ import EmptyState from '../components/common/EmptyState';
 import Loading from '../components/common/Loading';
 import { mediaUrl } from '../services/api';
 import type { Product, Review } from '../types';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function ProductDetailPage() {
   const { id } = useParams();
@@ -33,6 +34,7 @@ export default function ProductDetailPage() {
   const [myComment, setMyComment] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewBlockedMsg, setReviewBlockedMsg] = useState('');
+  usePageTitle(product?.name);
 
   const loadReviews = (productId: string, page = 1) => {
     return reviewService

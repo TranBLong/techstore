@@ -22,6 +22,9 @@ import OrderSuccessPage from './pages/OrderSuccessPage';
 import OrderDetailPage from './pages/OrderDetailPage';
 import WishlistPage from './pages/WishlistPage';
 import NotFoundPage from './pages/NotFoundPage';
+import AboutPage from './pages/AboutPage';
+import ContactPage from './pages/ContactPage';
+import PolicyPage from './pages/PolicyPage';
 
 import DashboardPage from './pages/admin/DashboardPage';
 import AdminProductsPage from './pages/admin/ProductsPage';
@@ -55,6 +58,9 @@ export default function App() {
                 <Route path="don-hang/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
                 <Route path="dat-hang-thanh-cong/:id" element={<ProtectedRoute><OrderSuccessPage /></ProtectedRoute>} />
                 <Route path="yeu-thich" element={<ProtectedRoute><WishlistPage /></ProtectedRoute>} />
+                <Route path="gioi-thieu" element={<AboutPage />} />
+                <Route path="lien-he" element={<ContactPage />} />
+                <Route path="chinh-sach/:slug" element={<PolicyPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
 

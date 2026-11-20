@@ -8,8 +8,10 @@ import EmptyState from '../components/common/EmptyState';
 import Loading from '../components/common/Loading';
 import { mediaUrl } from '../services/api';
 import type { Order } from '../types';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function OrdersPage() {
+  usePageTitle('Đơn hàng của tôi');
   const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();

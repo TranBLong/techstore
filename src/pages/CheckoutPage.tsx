@@ -8,8 +8,10 @@ import { couponService } from '../services/couponService';
 import { formatCurrency } from '../utils/format';
 import EmptyState from '../components/common/EmptyState';
 import { mediaUrl } from '../services/api';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function CheckoutPage() {
+  usePageTitle('Thanh toán');
   const { items, subtotal, clearCart } = useCart();
   const { user, isAuthenticated } = useAuth();
   const { showToast } = useToast();

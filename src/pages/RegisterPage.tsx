@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function RegisterPage() {
+  usePageTitle('Đăng ký');
   const { register } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();

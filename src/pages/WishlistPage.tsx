@@ -5,8 +5,10 @@ import ProductCard from '../components/product/ProductCard';
 import EmptyState from '../components/common/EmptyState';
 import Loading from '../components/common/Loading';
 import type { Product } from '../types';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function WishlistPage() {
+  usePageTitle('Yêu thích');
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 

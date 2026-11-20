@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { authService } from '../services/authService';
 import { useToast } from '../contexts/ToastContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function ResetPasswordPage() {
+  usePageTitle('Đặt lại mật khẩu');
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();

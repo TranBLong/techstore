@@ -4,8 +4,10 @@ import { useCart } from '../contexts/CartContext';
 import { formatCurrency } from '../utils/format';
 import EmptyState from '../components/common/EmptyState';
 import { mediaUrl } from '../services/api';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function CartPage() {
+  usePageTitle('Giỏ hàng');
   const { items, subtotal, updateQuantity, removeItem, clearCart } = useCart();
   const shipping = subtotal > 5000000 || subtotal === 0 ? 0 : 30000;
   const total = subtotal + shipping;

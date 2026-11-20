@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function AccountPage() {
+  usePageTitle('Tài khoản');
   const { user, updateProfile, changePassword, logout } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
