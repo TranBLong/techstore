@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { prisma } from '../prisma.js';
 import { authRequired, adminRequired } from '../middleware/auth.js';
 import { mapOrder } from '../utils/map.js';
+import { validate } from '../utils/validate.js';
 import { assertCouponUsable } from './coupons.js';
 
 const router = Router();
@@ -9,6 +11,54 @@ const router = Router();
 /** Phí ship: miễn phí nếu tạm tính > 5.000.000đ (cùng rule frontend) */
 const FREE_SHIP_THRESHOLD = 5_000_000;
 const SHIPPING_FEE = 30_000;
+
+const vnPhoneRegex = /^(0|\+84)[0-9]{9,10}$/;
+
+const shippingInfoSchema = z.object({
+  fullName: z
+    .string({ error: 'Họ tên không được để trống' })
+    .trim()
+    .min(1, 'Họ tên không được để trống'),
+  address: z
+    .string({ error: 'Địa chỉ không được để trống' })
+    .trim()
+    .min(1, 'Địa chỉ không được để trống'),
+  city: z
+    .string({ error: 'Tỉnh/Thành phố không được để trống' })
+    .trim()
+    .min(1, 'Tỉnh/Thành phố không được để trống'),
+  district: z
+    .string({ error: 'Quận/Huyện không được để trống' })
+    .trim()
+    .min(1, 'Quận/Huyện không được để trống'),
+  phone: z
+    .string({ error: 'Số điện thoại không hợp lệ' })
+    .trim()
+    .regex(vnPhoneRegex, 'Số điện thoại không hợp lệ (bắt đầu bằng 0 hoặc +84, 10-11 chữ số)'),
+  email: z
+    .string({ error: 'Email không hợp lệ' })
+    .trim()
+    .email('Email không hợp lệ'),
+  note: z
+    .string()
+    .max(500, 'Ghi chú tối đa 500 ký tự')
+    .optional()
+    .default(''),
+});
+
+const createOrderSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        productId: z.string().min(1),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(1, 'Giỏ hàng trống'),
+  shippingInfo: shippingInfoSchema,
+  paymentMethod: z.enum(['cod', 'transfer']).optional().default('cod'),
+  couponCode: z.string().optional(),
+});
 
 router.get('/my', authRequired, async (req, res) => {
   const list = await prisma.order.findMany({
@@ -49,15 +99,12 @@ router.get('/:id', authRequired, async (req, res) => {
  * Đặt hàng: server tự lấy giá từ DB, kiểm tra tồn kho, tính subtotal / ship / total,
  * trừ kho trong transaction — không tin số tiền client gửi lên.
  */
-router.post('/', authRequired, async (req, res) => {
-  const body = req.body || {};
+router.post('/', authRequired, validate(createOrderSchema), async (req, res) => {
+  const body = req.body;
   const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
   if (!user) return res.status(401).json({ message: 'Chưa đăng nhập' });
 
-  const rawItems: { productId?: string; quantity?: number }[] = body.items || [];
-  if (!Array.isArray(rawItems) || rawItems.length === 0) {
-    return res.status(400).json({ message: 'Giỏ hàng trống' });
-  }
+  const rawItems: { productId: string; quantity: number }[] = body.items;
 
   // Gom số lượng theo productId (tránh trùng dòng)
   const qtyMap = new Map<string, number>();
@@ -132,7 +179,7 @@ router.post('/', authRequired, async (req, res) => {
   }
   const total = Math.max(0, subtotal - discount + shippingFee);
 
-  const shippingInfo = body.shippingInfo || {};
+  const shippingInfo = body.shippingInfo;
   const paymentMethod = body.paymentMethod === 'transfer' ? 'transfer' : 'cod';
 
   try {

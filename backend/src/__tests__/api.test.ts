@@ -275,6 +275,26 @@ describe('TechStore API', () => {
     expect(response.body.message).toMatch(/kho|tồn/i);
   });
 
+  it('đặt hàng với SĐT sai định dạng trả 400', async () => {
+    const response = await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        items: [{ productId, quantity: 1 }],
+        paymentMethod: 'cod',
+        shippingInfo: {
+          fullName: 'User Test',
+          phone: '12345',
+          email: 'user@test.com',
+          address: '1 Test',
+          city: 'HN',
+          district: 'HK',
+        },
+      });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/số điện thoại|phone/i);
+  });
+
   it('user thường gọi API admin bị 403', async () => {
     const response = await request(app).get('/api/users').set('Authorization', `Bearer ${userToken}`);
     expect(response.status).toBe(403);

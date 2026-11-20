@@ -29,7 +29,7 @@ app.use(
     origin: frontendOrigin,
   }),
 );
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '1mb' }));
 app.use('/images', express.static(path.join(__dirname, '../public/images')));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
